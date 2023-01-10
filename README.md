@@ -18,12 +18,21 @@ ThingsCloud 是物联网设备统一接入平台和低代码应用开发平台�
 
 ## 安装 SDK
 
-ThingsCloud ESP SDK 支持通过以下方式安装：
+支持通过以下方式安装：
 
-- PlatformIO
-- 手动安装 Library
+### **PlatformIO**
 
-另外，请安装以下依赖库：
+使用 VSCode + PlatformIO 开发方式，可以直接在 PlatformIO Library 中搜索并添加到项目中。
+
+![articles/2022/20230110235709_ae88b059b93a179e98945a207f6576f9.png](https://img-1300291923.cos.ap-beijing.myqcloud.com/articles/2022/20230110235709_ae88b059b93a179e98945a207f6576f9.png)
+
+### **Arduino**
+
+暂时不支持通过库管理器添加，请手动下载整个库，放置在 `Arduino\libraries` 中。
+
+## 安装其它依赖
+
+请安装以下依赖库：
 
 - [MQTT PubSub Client](https://github.com/knolleary/pubsubclient)
 - [ArduinoJSON](https://github.com/bblanchon/ArduinoJson)
