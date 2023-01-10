@@ -15,12 +15,11 @@
             "maintainer": true
         }
     ],
-    "license": "MIT",
     "homepage": "https://www.thingscloud.xyz/",
     "dependencies": {
         "knolleary/PubSubClient": "~2.8",
         "bblanchon/ArduinoJson": "^6.19.4"
     },
     "frameworks": "arduino",
-    "platforms": ""
+    "platforms": ["espressif8266", "espressif32"]
 }
