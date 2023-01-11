@@ -40,15 +40,29 @@ ThingsCloud 是物联网设备统一接入平台和低代码应用开发平台�
 
 ## 示例
 
-### examples/wifi_basic_connect
+### 01.WiFi_Basic
 
-普通 WiFi 接入 + 设备一机一密
+普通 WiFi 连接方式，指定 WiFi SSID 和密码。
 
+- mqtt_connect_with_access_token：每个设备使用自己的 AccessToken 连接 ThingsCloud
+- mqtt_connect_with_device_key：每个设备使用 DeviceKey 请求 AccessToken，连接 ThingsCloud
+- mqtt_connect_with_device_key_auto_create_device：每个设备使用 DeviceKey 请求 AccessToken，连接 ThingsCloud。如果 DeviceKey 的设备不存在，支持自动创建设备。
+- mqtt_connect_with_auto_device_key：每个设备自动生成唯一的 DeviceKey，请求 AccessToken，连接 ThingsCloud。
 
-### examples/wifi_ap_provisioning
+### 02.WiFi_Provisioning_AP_Mode
 
-WiFi 配网 + 设备一型一密
+不需要指定 WiFi SSID 和密码，用户通过 ThingsX App 完成 WiFi 配网。
 
-### examples/wifi_ap_provisioning_reset_button
+- wifi_provisioning_cliam_device：WiFi 配网模式的示例，用户完成配网后领取设备。
+- wifi_provisioning_reset：通过长按按键重置配网的示例。
 
-WiFi 配网 + 设备一型一密 + WiFi 复位按键
+### 03.MQTT_Communicate
+
+设备 MQTT 通信示例。
+
+- mqtt_attributes：设备上报设备属性、接收云平台下发属性、读取云平台的设备属性。
+- mqtt_report_event：设备上报事件的示例。
+- mqtt_recv_command：设备接收云平台下发命令的示例。
+
+更多示例代码即将推出……
+
