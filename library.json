@@ -15,7 +15,14 @@
             "maintainer": true
         }
     ],
+    "dependencies": {
+        "knolleary/PubSubClient": "~2.8",
+        "bblanchon/ArduinoJson": "^6.19.4"
+    },
     "homepage": "https://www.thingscloud.xyz/",
     "frameworks": "arduino",
-    "platforms": ["espressif8266", "espressif32"]
+    "platforms": [
+        "espressif8266",
+        "espressif32"
+    ]
 }
