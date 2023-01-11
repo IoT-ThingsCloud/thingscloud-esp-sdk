@@ -1315,7 +1315,10 @@ void ThingsCloudWiFiManager::handleWifiSave()
         server->send(200, FPSTR(HTTP_HEAD_JSON), page);
         return;
     }
-    this->_mqttClient->setCustomerId(this->getCustomerId());
+    if (this->_mqttClient)
+    {
+        this->_mqttClient->setCustomerId(this->getCustomerId());
+    }
 
     if (server->arg(FPSTR(S_ip)) != "")
     {

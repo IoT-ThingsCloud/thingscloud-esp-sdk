@@ -88,7 +88,7 @@ bool ThingsCloudMQTT::fetchDeviceAccessToken()
 {
     HTTPClient http;
     if (_enableSerialLogs)
-        Serial.println("Request device AccessToken for " + _deviceKey);
+        Serial.println("Request device AccessToken by DeviceKey " + _deviceKey);
     String serverPath = String(_apiEndpoint) + "/device/v1/certificate";
     http.begin(serverPath.c_str());
     http.addHeader("Content-Type", "application/json");
