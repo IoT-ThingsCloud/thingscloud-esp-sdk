@@ -18,10 +18,6 @@
 #include <WiFiClient.h>
 #endif
 
-#ifndef WIFI_getChipId
-#define WIFI_getChipId() (uint64_t) ESP.getEfuseMac()
-#endif
-
 #define DEFAULT_MQTT_CLIENT_NAME "THINGSCLOUD_ESP32_ARDUINO_LIB"
 
 const unsigned int mqttKeepAlive = 120;

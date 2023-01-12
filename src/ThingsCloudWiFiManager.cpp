@@ -332,7 +332,6 @@ bool ThingsCloudWiFiManager::startAP()
 #ifdef WM_DEBUG_LEVEL
     if (!ret)
         DEBUG_WM(DEBUG_ERROR, F("[ERROR] There was a problem starting the AP"));
-    DEBUG_WM(F("AP IP address:"), WiFi.softAPIP());
 #endif
 
 // set ap hostname
@@ -439,9 +438,6 @@ void ThingsCloudWiFiManager::setupConfigPortal()
     server->onNotFound(std::bind(&ThingsCloudWiFiManager::handleNotFound, this));
 
     server->begin(); // Web server start
-#ifdef WM_DEBUG_LEVEL
-    DEBUG_WM(DEBUG_VERBOSE, F("HTTP server started"));
-#endif
 
     if (_preloadwifiscan)
         WiFi_scanNetworks(true, true); // preload wifiscan , async
@@ -1415,7 +1411,7 @@ void ThingsCloudWiFiManager::handleInfo()
     infoObj["uptime_mins"] = (String)(millis() / 1000 / 60);
     infoObj["uptime_secs"] = (String)((millis() / 1000) % 60);
 
-    infoObj["chip_id"] = String(WIFI_getChipId(), HEX);
+    infoObj["chip_id"] = getEspChipUniqueId();
 
 #ifdef ESP32
 
@@ -2208,9 +2204,24 @@ bool ThingsCloudWiFiManager::getWiFiIsSaved()
  */
 String ThingsCloudWiFiManager::getDefaultAPName()
 {
-    String hostString = String(WIFI_getChipId(), HEX);
-    hostString.toUpperCase();
-    return _wifissidprefix + "_" + hostString;
+    return _wifissidprefix + "_" + getEspChipUniqueId();
+}
+
+/**
+ * getEspChipUniqueId
+ * @since $dev
+ * @return string
+ */
+String ThingsCloudWiFiManager::getEspChipUniqueId()
+{
+    uint32_t chipId = 0;
+    for (int i = 0; i < 17; i = i + 8)
+    {
+        chipId |= ((ESP.getEfuseMac() >> (40 - i)) & 0xff) << i;
+    }
+    String uniqueId = String(chipId, HEX);
+    uniqueId.toUpperCase();
+    return uniqueId;
 }
 
 /**

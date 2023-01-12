@@ -50,7 +50,6 @@ extern "C"
 #include <ESP8266mDNS.h>
 #endif
 
-#define WIFI_getChipId() ESP.getChipId()
 #define WM_WIFIOPEN ENC_TYPE_NONE
 
 #elif defined(ESP32)
@@ -81,10 +80,6 @@ extern "C"
 #include <esp_wifi.h>
 #include <Update.h>
 #include <ThingsCloudMQTT.h>
-
-#ifndef WIFI_getChipId
-#define WIFI_getChipId() (uint32_t) ESP.getEfuseMac()
-#endif
 
 #define WM_WIFIOPEN WIFI_AUTH_OPEN
 
@@ -412,6 +407,9 @@ public:
 
     // get default ap esp uses , esp_chipid etc
     String getDefaultAPName();
+
+    // get esp chip unique id
+    String getEspChipUniqueId();
 
     // set port of webserver, 80
     void setHttpPort(uint16_t port);
