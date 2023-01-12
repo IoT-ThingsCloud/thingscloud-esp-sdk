@@ -12,8 +12,7 @@ ThingsCloud 是物联网设备统一接入平台和低代码应用开发平台�
 - B站：https://space.bilibili.com/1953347444
 
 
-![articles/2022/20230110235119_bffb83e580e27575f42d41b419a1b1ae.png](https://img-1300291923.cos.ap-beijing.myqcloud.com/articles/2022/20230110235119_bffb83e580e27575f42d41b419a1b1ae.png)
-
+![articles/2023/20230112114634_afd61232cd029fca77eaebe67e12beaf.png](https://img-1300291923.cos.ap-beijing.myqcloud.com/articles/2023/20230112114634_afd61232cd029fca77eaebe67e12beaf.png)
 
 
 ## 安装 SDK
@@ -28,17 +27,30 @@ ThingsCloud 是物联网设备统一接入平台和低代码应用开发平台�
 
 ### **Arduino**
 
-暂时不支持通过库管理器添加，请手动下载整个库，放置在 `Arduino\libraries` 中。
+#### 方法1. 通过 Arduino 库管理器安装（推荐）
+
+进入 Arduino 菜单的 `工具 > 管理库`，搜索 `ThingsCloud`，选择最新版本，点击安装。有版本更新时，需要在这里点击更新。
+
+![articles/2023/20230112114700_f7bb8f38867201e9301b4450e31b65e0.png](https://img-1300291923.cos.ap-beijing.myqcloud.com/articles/2023/20230112114700_f7bb8f38867201e9301b4450e31b65e0.png)
+
+#### 方法2. 手动安装
+
+下载代码仓库最新的 release 压缩包，解压缩后，将整个目录放置在 `Arduino\libraries` 中。
+
 
 ## 安装其它依赖
 
-请安装以下依赖库：
+SDK 正常运行需要以下依赖库：
 
 - [MQTT PubSub Client](https://github.com/knolleary/pubsubclient)
 - [ArduinoJSON](https://github.com/bblanchon/ArduinoJson)
 
+如使用 PlatformIO IDE，依赖库将自动安装。如使用 Arduino IDE，需要单独安装这些依赖库，方法同上。
+
 
 ## 示例
+
+如使用 Arduino IDE，可在 `文件 > 示例` 中，直接打开以下示例代码。
 
 ### 01.WiFi_Basic
 
