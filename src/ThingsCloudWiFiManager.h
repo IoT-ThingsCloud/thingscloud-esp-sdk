@@ -6,7 +6,7 @@
 #ifndef ThingsCloudWiFiManager_h
 #define ThingsCloudWiFiManager_h
 
-// #define ESP32
+#include <ThingsCloudMQTT.h>
 
 #if defined(ESP8266) || defined(ESP32)
 
@@ -50,6 +50,10 @@ extern "C"
 #include <ESP8266mDNS.h>
 #endif
 
+#ifndef ESP_getChipId
+#define ESP_getChipId() ESP.getChipId()
+#endif
+
 #define WM_WIFIOPEN ENC_TYPE_NONE
 
 #elif defined(ESP32)
@@ -79,7 +83,10 @@ extern "C"
 #include <WiFi.h>
 #include <esp_wifi.h>
 #include <Update.h>
-#include <ThingsCloudMQTT.h>
+
+#ifndef ESP_getChipId
+#define ESP_getChipId() (uint64_t) ESP.getEfuseMac()
+#endif
 
 #define WM_WIFIOPEN WIFI_AUTH_OPEN
 

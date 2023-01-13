@@ -8,14 +8,25 @@
 
 // #include <HTTPUpdate.h>
 #include <ArduinoJson.h>
-#include <HTTPClient.h>
 #include <PubSubClient.h>
 #include <vector>
 
 #ifdef ESP8266
+
 #include <ESP8266WiFi.h>
+#include <ESP8266HTTPClient.h>
+#ifndef ESP_getChipId
+#define ESP_getChipId() ESP.getChipId()
+#endif
+
 #else // for ESP32
+
 #include <WiFiClient.h>
+#include <HTTPClient.h>
+#ifndef ESP_getChipId
+#define ESP_getChipId() (uint64_t) ESP.getEfuseMac()
+#endif
+
 #endif
 
 #define DEFAULT_MQTT_CLIENT_NAME "THINGSCLOUD_ESP32_ARDUINO_LIB"

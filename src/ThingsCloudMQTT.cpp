@@ -90,7 +90,11 @@ bool ThingsCloudMQTT::fetchDeviceAccessToken()
     if (_enableSerialLogs)
         Serial.println("Request device AccessToken by DeviceKey " + _deviceKey);
     String serverPath = String(_apiEndpoint) + "/device/v1/certificate";
+#ifdef ESP32
     http.begin(serverPath.c_str());
+#else
+    http.begin(_wifiClient, serverPath.c_str());
+#endif
     http.addHeader("Content-Type", "application/json");
     http.addHeader("Project-Key", _projectKey);
     StaticJsonDocument<1024> postObject;
@@ -762,7 +766,7 @@ String ThingsCloudMQTT::getEspChipUniqueId()
     uint32_t chipId = 0;
     for (int i = 0; i < 17; i = i + 8)
     {
-        chipId |= ((ESP.getEfuseMac() >> (40 - i)) & 0xff) << i;
+        chipId |= ((ESP_getChipId() >> (40 - i)) & 0xff) << i;
     }
     String uniqueId = String(chipId, HEX);
     uniqueId.toUpperCase();

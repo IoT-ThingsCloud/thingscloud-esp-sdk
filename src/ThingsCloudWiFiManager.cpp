@@ -1458,16 +1458,10 @@ void ThingsCloudWiFiManager::handleInfo()
     infoObj["soft_ap_mac"] = (String)WiFi.softAPmacAddress();
 
 #ifdef ESP32
-
     infoObj["soft_ap_hostname"] = WiFi.softAPgetHostname();
-
 #endif
 #ifdef ESP8266
-
-    p = FPSTR(HTTP_INFO_apssid);
-    p.replace(FPSTR(T_1), htmlEntities(WiFi.softAPSSID()));
     infoObj["soft_ap_ssid"] = htmlEntities(WiFi.softAPSSID());
-
 #endif
 
     infoObj["bssid"] = (String)WiFi.BSSIDstr();
@@ -2217,7 +2211,7 @@ String ThingsCloudWiFiManager::getEspChipUniqueId()
     uint32_t chipId = 0;
     for (int i = 0; i < 17; i = i + 8)
     {
-        chipId |= ((ESP.getEfuseMac() >> (40 - i)) & 0xff) << i;
+        chipId |= ((ESP_getChipId() >> (40 - i)) & 0xff) << i;
     }
     String uniqueId = String(chipId, HEX);
     uniqueId.toUpperCase();
