@@ -1,6 +1,17 @@
 # thingscloud-esp-sdk
 ThingsCloud IoT Platform WiFi and MQTT client library for ESP8266/ESP32 based boards using arduino platform.
 
+ThingsCloud 推出了基于 ESP32/ESP8266 Arduino 的 SDK，方便智能硬件厂商和开发者快速将设备接入 ThingsCloud 云平台并生成物联网应用，完成物联网方案的快速落地。
+
+## SDK 支持特性
+
+- WiFi 基本连接，指定 WiFi SSID/Password，连接到固定 AP。
+- WiFi 配网，可使用 ThingsX iOS/Android App，为模组快速配置 WiFi 连接信息。适合多设备的量产。
+- MQTT 一机一密，为每个模组烧录独立的证书。
+- MQTT 一型一密，为所有模组烧录相同的固件，每个模组自动获取证书。适合多设备的量产。
+- 支持 ThingsCloud MQTT 接入协议，几行代码就可以实现设备和云平台的双向数据实时传输，包括属性上报和下发、事件上报、命令接收、自定义数据流等。
+- 固件 OTA 升级，结合 ThingsCloud 的 OTA 版本管理功能。
+
 ThingsCloud 是物联网设备统一接入平台和低代码应用开发平台。可以帮助任何需要数字化改造的行业客户，在极短的时间内搭建物联网应用，并适应不断变化的发展需求。ThingsCloud 支持智能传感器、执行器、控制器、智能硬件等设备接入，支持 MQTT/HTTP/TCP/Modbus/LoRa/Zigbee/WiFi/BLE 等通信协议，实现数据采集、分析、监控，还可以灵活配置各种规则，生成项目应用 SaaS 和用户应用 App，这一切无需任何云端代码开发。
 
 - 官网：https://www.thingscloud.xyz/
