@@ -439,12 +439,22 @@ bool ThingsCloudMQTT::onAttributesGetResponse(MessageReceivedCallbackWithTopic m
     return subscribe("attributes/get/response/+", messageReceivedCallbackWithTopic);
 }
 
+bool ThingsCloudMQTT::onAttributesGetResponse(MessageReceivedCallbackJSONWithTopic messageReceivedCallbackWithTopic)
+{
+    return subscribe("attributes/get/response/+", messageReceivedCallbackWithTopic);
+}
+
 bool ThingsCloudMQTT::onAttributesResponse(MessageReceivedCallback messageReceivedCallback)
 {
     return subscribe("attributes/response", messageReceivedCallback);
 }
 
 bool ThingsCloudMQTT::onAttributesPush(MessageReceivedCallback messageReceivedCallback)
+{
+    return subscribe("attributes/push", messageReceivedCallback);
+}
+
+bool ThingsCloudMQTT::onAttributesPush(MessageReceivedCallbackJSON messageReceivedCallback)
 {
     return subscribe("attributes/push", messageReceivedCallback);
 }
@@ -513,11 +523,31 @@ bool ThingsCloudMQTT::subscribe(const String &topic, MessageReceivedCallback mes
     return success;
 }
 
+bool ThingsCloudMQTT::subscribe(const String &topic, MessageReceivedCallbackJSON messageReceivedCallback, uint8_t qos)
+{
+    if (subscribe(topic, (MessageReceivedCallback)NULL, qos))
+    {
+        _topicSubscriptionList[_topicSubscriptionList.size() - 1].callbackJSON = messageReceivedCallback;
+        return true;
+    }
+    return false;
+}
+
 bool ThingsCloudMQTT::subscribe(const String &topic, MessageReceivedCallbackWithTopic messageReceivedCallback, uint8_t qos)
 {
     if (subscribe(topic, (MessageReceivedCallback)NULL, qos))
     {
         _topicSubscriptionList[_topicSubscriptionList.size() - 1].callbackWithTopic = messageReceivedCallback;
+        return true;
+    }
+    return false;
+}
+
+bool ThingsCloudMQTT::subscribe(const String &topic, MessageReceivedCallbackJSONWithTopic messageReceivedCallback, uint8_t qos)
+{
+    if (subscribe(topic, (MessageReceivedCallback)NULL, qos))
+    {
+        _topicSubscriptionList[_topicSubscriptionList.size() - 1].callbackJSONWithTopic = messageReceivedCallback;
         return true;
     }
     return false;
@@ -754,9 +784,37 @@ void ThingsCloudMQTT::mqttMessageReceivedCallback(char *topic, uint8_t *payload,
         if (mqttTopicMatch(_topicSubscriptionList[i].topic, String(topic)))
         {
             if (_topicSubscriptionList[i].callback != NULL)
-                _topicSubscriptionList[i].callback(payloadStr); // Call the callback
+            {
+                _topicSubscriptionList[i].callback(payloadStr);
+            }
+            if (_topicSubscriptionList[i].callbackJSON != NULL)
+            {
+                DynamicJsonDocument doc(512);
+                DeserializationError error = deserializeJson(doc, payloadStr);
+                if (error)
+                {
+                    Serial.printf("JSON deserialize error: %s\n", error.f_str());
+                    continue;
+                }
+                JsonObject obj = doc.as<JsonObject>();
+                _topicSubscriptionList[i].callbackJSON(obj);
+            }
             if (_topicSubscriptionList[i].callbackWithTopic != NULL)
-                _topicSubscriptionList[i].callbackWithTopic(topicStr, payloadStr); // Call the callback
+            {
+                _topicSubscriptionList[i].callbackWithTopic(topicStr, payloadStr);
+            }
+            if (_topicSubscriptionList[i].callbackJSONWithTopic != NULL)
+            {
+                DynamicJsonDocument doc(512);
+                DeserializationError error = deserializeJson(doc, payloadStr);
+                if (error)
+                {
+                    Serial.printf("JSON deserialize error: %s\n", error.f_str());
+                    continue;
+                }
+                JsonObject obj = doc.as<JsonObject>();
+                _topicSubscriptionList[i].callbackJSONWithTopic(topicStr, obj);
+            }
         }
     }
 }

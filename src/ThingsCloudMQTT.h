@@ -39,7 +39,9 @@ void onMQTTConnect();
 
 typedef std::function<void()> ConnectionStatusCallback;
 typedef std::function<void(const String &message)> MessageReceivedCallback;
+typedef std::function<void(const JsonObject &obj)> MessageReceivedCallbackJSON;
 typedef std::function<void(const String &topicStr, const String &message)> MessageReceivedCallbackWithTopic;
+typedef std::function<void(const String &topicStr, const JsonObject &obj)> MessageReceivedCallbackJSONWithTopic;
 typedef std::function<void()> DelayedExecutionCallback;
 
 class ThingsCloudMQTT
@@ -85,11 +87,11 @@ private:
     {
         String topic;
         MessageReceivedCallback callback;
+        MessageReceivedCallbackJSON callbackJSON;
         MessageReceivedCallbackWithTopic callbackWithTopic;
+        MessageReceivedCallbackJSONWithTopic callbackJSONWithTopic;
     };
     std::vector<TopicSubscriptionRecord> _topicSubscriptionList;
-
-    MessageReceivedCallbackWithTopic _onMessageCallback;
 
     // Delayed execution related
     struct DelayedExecutionRecord
@@ -145,14 +147,18 @@ public:
     bool reportData(const String topic, std::vector<unsigned char> data);
     bool getAttributes();
     bool onAttributesGetResponse(MessageReceivedCallbackWithTopic messageReceivedCallbackWithTopic);
+    bool onAttributesGetResponse(MessageReceivedCallbackJSONWithTopic messageReceivedCallbackWithTopic);
     bool onAttributesResponse(MessageReceivedCallback messageReceivedCallback);
     bool onAttributesPush(MessageReceivedCallback messageReceivedCallback);
+    bool onAttributesPush(MessageReceivedCallbackJSON messageReceivedCallback);
     bool onCommandSend(MessageReceivedCallbackWithTopic MessageReceivedCallbackWithTopic);
 
     bool setMaxPacketSize(const uint16_t size);
     bool publish(const String &topic, const String &payload, bool retain = false);
     bool subscribe(const String &topic, MessageReceivedCallback messageReceivedCallback, uint8_t qos = 0);
+    bool subscribe(const String &topic, MessageReceivedCallbackJSON messageReceivedCallback, uint8_t qos = 0);
     bool subscribe(const String &topic, MessageReceivedCallbackWithTopic messageReceivedCallback, uint8_t qos = 0);
+    bool subscribe(const String &topic, MessageReceivedCallbackJSONWithTopic messageReceivedCallback, uint8_t qos = 0);
     bool unsubscribe(const String &topic); // Unsubscribes from the topic, if it exists, and removes it from the CallbackList.
 
     // Wifi related
