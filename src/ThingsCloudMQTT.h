@@ -151,7 +151,8 @@ public:
     bool onAttributesResponse(MessageReceivedCallback messageReceivedCallback);
     bool onAttributesPush(MessageReceivedCallback messageReceivedCallback);
     bool onAttributesPush(MessageReceivedCallbackJSON messageReceivedCallback);
-    bool onCommandSend(MessageReceivedCallbackWithTopic MessageReceivedCallbackWithTopic);
+    bool onCommandSend(MessageReceivedCallbackWithTopic messageReceivedCallbackWithTopic);
+    bool onCommandSend(MessageReceivedCallbackJSONWithTopic messageReceivedCallbackWithTopic);
 
     bool setMaxPacketSize(const uint16_t size);
     bool publish(const String &topic, const String &payload, bool retain = false);

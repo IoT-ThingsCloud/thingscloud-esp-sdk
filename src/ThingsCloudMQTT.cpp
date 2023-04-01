@@ -464,6 +464,11 @@ bool ThingsCloudMQTT::onCommandSend(MessageReceivedCallbackWithTopic messageRece
     return subscribe("command/send/+", messageReceivedCallbackWithTopic);
 }
 
+bool ThingsCloudMQTT::onCommandSend(MessageReceivedCallbackJSONWithTopic messageReceivedCallbackWithTopic)
+{
+    return subscribe("command/send/+", messageReceivedCallbackWithTopic);
+}
+
 bool ThingsCloudMQTT::publish(const String &topic, const String &payload, bool retain)
 {
     // Do not try to publish if MQTT is not connected.
