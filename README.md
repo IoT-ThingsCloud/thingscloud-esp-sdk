@@ -87,5 +87,14 @@ SDK 正常运行需要以下依赖库：
 - mqtt_report_event：设备上报事件的示例。
 - mqtt_recv_command：设备接收云平台下发命令的示例。
 
+### 10.IoT_Tutorials
+
+应用示例。
+
+- dht_sensor：dht11/21/22 温湿度传感器上报数据。
+- relay_control：ThingsCloud 下发控制继电器。
+- dtu_uart_stream：实现透传 DTU，支持 WiFi 配网，主控通过 UART 和 ESP32 UART1 通信。
+- command_ota：使用 ThingsCloud OTA，实现 ESP32 固件升级。
+
 更多示例代码即将推出……
 
