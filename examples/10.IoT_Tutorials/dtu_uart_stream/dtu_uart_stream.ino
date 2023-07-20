@@ -43,8 +43,15 @@ unsigned long getTime() {
   return now;
 }
 
-// 串口，使用 UART1 RX/GPIO6 TX/GPIO7
+// 使用 UART1 串口
 HardwareSerial SerialPort(1);
+// 不同型号模组 UART1 引脚不同
+// ESP32C3
+const int RX_PIN = 6;
+const int TX_PIN = 7;
+// ESP32WROON
+// const int RX_PIN = 5;
+// const int TX_PIN = 4;
 
 // 设置 LED 指示灯 GPIO 引脚
 const int LED_PIN = 3;
@@ -68,7 +75,7 @@ const int live_resp_timeout = 1000 * 60 * 30;
 void setup() {
   Serial.begin(115200);
 
-  SerialPort.begin(9600, SERIAL_8N1, 6, 7);
+  SerialPort.begin(9600, SERIAL_8N1, RX_PIN, TX_PIN);
 
   // 配网重置按键，默认下拉
   pinMode(RESET_BUTTON_PIN, INPUT_PULLDOWN);
