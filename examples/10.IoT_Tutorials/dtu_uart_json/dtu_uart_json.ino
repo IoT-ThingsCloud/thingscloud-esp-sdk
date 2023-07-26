@@ -6,10 +6,10 @@
 //======================================================
 // 在 ThingsCloud 控制台的设备详情页中，复制以下设备连接信息
 // https://console.thingscloud.xyz
-#define THINGSCLOUD_MQTT_HOST ""                      // MQTT 主机
-#define THINGSCLOUD_PROJECT_KEY ""                    // ProjectKey，同一个项目所有设备的 ProjectKey 相同
-#define THINGSCLOUD_TYPE_KEY ""                       // 设备类型的 TypeKey，用于自动创建设备
-#define THINGSCLOUD_API_ENDPOINT ""                   // HTTP 接入点，用于动态获取设备证书
+#define THINGSCLOUD_MQTT_HOST ""     // MQTT 主机
+#define THINGSCLOUD_PROJECT_KEY ""   // ProjectKey，同一个项目所有设备的 ProjectKey 相同
+#define THINGSCLOUD_TYPE_KEY ""      // 设备类型的 TypeKey，用于自动创建设备
+#define THINGSCLOUD_API_ENDPOINT ""  // HTTP 接入点，用于动态获取设备证书
 //======================================================
 
 ThingsCloudMQTT client(
@@ -20,8 +20,8 @@ ThingsCloudMQTT client(
   THINGSCLOUD_API_ENDPOINT);
 
 // ESP模组生成 WiFi AP，用于配网
-#define WiFi_AP_SSID "ESP32_DEVICE"   // AP 的 SSID 前缀，出现在用户 App 的 WiFi 列表中，可修改为你喜欢的名称
-#define WiFi_AP_PASSWORD ""           // AP 的连接密码，可以不设置
+#define WiFi_AP_SSID "ESP32_DEVICE"  // AP 的 SSID 前缀，出现在用户 App 的 WiFi 列表中，可修改为你喜欢的名称
+#define WiFi_AP_PASSWORD ""          // AP 的连接密码，可以不设置
 ThingsCloudWiFiManager wm(WiFi_AP_SSID, WiFi_AP_PASSWORD);
 
 // 固件版本
@@ -36,7 +36,7 @@ unsigned long getTime() {
   time_t now;
   struct tm timeinfo;
   if (!getLocalTime(&timeinfo)) {
-    //Serial.println("Failed to obtain time");
+    // Serial.println("Failed to obtain time");
     return (0);
   }
   time(&now);
@@ -118,13 +118,13 @@ void onMQTTConnect() {
     live_resp_timer = millis();
   });
 
-  // 订阅云平台下发的自定义数据流
-  client.subscribe("data/stream/set", [](const String &topic, const String &payload) {
-    Serial.println("data set topic: " + topic + ", payload: " + payload);
+  // 订阅云平台下发属性的消息
+  client.onAttributesPush([](const String &payload) {
+    Serial.println("attributes push: " + payload);
     SerialPort.write(payload.c_str(), payload.length());
   });
 
-  // 延迟 1 秒上报首次传感器数据
+  // 延迟 1 秒上报首次设备信息
   client.executeDelayed(1000 * 1, []() {
     pubStartInfo();
   });
@@ -178,7 +178,7 @@ void checkResetButton() {
 }
 
 void loop() {
-  
+
   // 检查配网重置按键
   checkResetButton();
 
@@ -204,7 +204,7 @@ void loop() {
       String bufferStr((char *)buffer);
       Serial.println("SerialPort.read " + bufferStr);
       // report to cloud
-      client.publish("data/stream", bufferStr);
+      client.reportAttributes(bufferStr);
     }
   }
 }
