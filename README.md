@@ -93,7 +93,8 @@ SDK 正常运行需要以下依赖库：
 
 - dht_sensor：dht11/21/22 温湿度传感器上报数据。
 - relay_control：ThingsCloud 下发控制继电器。
-- dtu_uart_stream：实现透传 DTU，支持 WiFi 配网，主控通过 UART 和 ESP32 UART1 通信。
+- dtu_uart_stream：实现透传 DTU，主控 MCU 可通过 UART 和 ESP32 UART1 通信，云平台设备使用自定义数据流，支持二进制、文本、JSON，可通过规则引擎和设备属性进行互转。支持 WiFi 配网。
+- dtu_uart_json：实现透传 DTU，主控 MCU 可通过 UART 和 ESP32 UART1 通信，上下行数据使用 JSON 格式，实现设备属性上报和属性下发。支持 WiFi 配网。
 - command_ota：使用 ThingsCloud OTA，实现 ESP32 固件升级。
 
 更多示例代码即将推出……
