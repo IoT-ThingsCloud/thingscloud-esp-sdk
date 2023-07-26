@@ -75,7 +75,7 @@ const int live_resp_timeout = 1000 * 60 * 30;
 void setup() {
   Serial.begin(115200);
 
-  SerialPort.begin(9600, SERIAL_8N1, RX_PIN, TX_PIN);
+  SerialPort.begin(115200, SERIAL_8N1, RX_PIN, TX_PIN);
 
   // 配网重置按键，默认下拉
   pinMode(RESET_BUTTON_PIN, INPUT_PULLDOWN);
