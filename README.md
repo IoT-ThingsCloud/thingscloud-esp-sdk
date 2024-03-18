@@ -15,6 +15,8 @@ ThingsCloud 推出了基于 ESP32/ESP8266 Arduino 的 SDK，方便智能硬件�
 
 ## 安装 SDK
 
+[ThingsCloud ESP32/ESP8266 Arduino SDK](https://www.thingscloud.xyz/docs/tutorials/connect-device/esp32-arduino-sdk.html)
+
 支持通过以下方式安装：
 
 ### **PlatformIO**
@@ -44,6 +46,12 @@ SDK 正常运行需要以下依赖库：
 - [ArduinoJSON](https://github.com/bblanchon/ArduinoJson)
 
 如使用 PlatformIO IDE，依赖库将自动安装。如使用 Arduino IDE，需要单独安装这些依赖库，方法同上。
+
+## ThingsCloud 准备工作
+
+- [快速上手控制台](https://www.thingscloud.xyz/docs/guide/quickstart/signin-console.html)
+- [如何获得设备证书？](https://www.thingscloud.xyz/docs/guide/connect-device/device-certificate.html)
+- [ThingsCloud MQTT 接入文档](https://docs.thingscloud.xyz/guide/connect-device/mqtt.html)
 
 
 ## 示例
@@ -78,8 +86,8 @@ SDK 正常运行需要以下依赖库：
 
 应用示例。
 
-- dht_sensor：dht11/21/22 温湿度传感器上报数据。
-- relay_control：ThingsCloud 下发控制继电器。
+- dht_sensor：dht11/21/22 温湿度传感器上报数据。[ESP32 + DHT11/DHT22 温湿度传感器接入 ThingsCloud](https://www.thingscloud.xyz/docs/tutorials/connect-device/esp32-arduino-dht11-sensor.html)
+- relay_control：ThingsCloud 下发控制继电器。[ESP32 + 继电器模块接入 ThingsCloud](https://www.thingscloud.xyz/docs/tutorials/connect-device/esp32-arduino-relay-control.html)
 - dtu_uart_stream：实现透传 DTU，主控 MCU 可通过 UART 和 ESP32 UART1 通信，云平台设备使用自定义数据流，支持二进制、文本、JSON，可通过规则引擎和设备属性进行互转。支持 WiFi 配网。
 - dtu_uart_json：实现透传 DTU，主控 MCU 可通过 UART 和 ESP32 UART1 通信，上下行数据使用 JSON 格式，实现设备属性上报和属性下发。支持 WiFi 配网。
 - command_ota：使用 ThingsCloud OTA，实现 ESP32 固件升级。
