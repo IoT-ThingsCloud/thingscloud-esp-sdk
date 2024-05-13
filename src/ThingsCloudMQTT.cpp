@@ -429,6 +429,16 @@ bool ThingsCloudMQTT::reportEvent(const uint16_t id, const String event)
     return publish("event/report/" + String(id), event);
 }
 
+bool ThingsCloudMQTT::reportData(const String &topic, const String &payload)
+{
+    return publish(topic, payload);
+}
+
+bool ThingsCloudMQTT::reportData(const String &topic, const uint8_t *payload, unsigned int plength)
+{
+    return publish(topic, payload, plength);
+}
+
 bool ThingsCloudMQTT::getAttributes()
 {
     return publish("attributes/get/1000", "{}");
@@ -486,6 +496,30 @@ bool ThingsCloudMQTT::publish(const String &topic, const String &payload, bool r
     {
         if (success)
             Serial.printf("MQTT << [%s] %s\n", topic.c_str(), payload.c_str());
+        else
+            Serial.println("MQTT! publish failed, is the message too long ? (see setMaxPacketSize())"); // This can occurs if the message is too long according to the maximum defined in PubsubClient.h
+    }
+
+    return success;
+}
+
+bool ThingsCloudMQTT::publish(const String &topic, const uint8_t *payload, unsigned int plength)
+{
+    // Do not try to publish if MQTT is not connected.
+    if (!isConnected())
+    {
+        if (_enableSerialLogs)
+            Serial.println("MQTT! Trying to publish when disconnected, skipping.");
+
+        return false;
+    }
+
+    bool success = _mqttClient.publish(topic.c_str(), payload, plength);
+
+    if (_enableSerialLogs)
+    {
+        if (success)
+            Serial.printf("MQTT << [%s] (HEX)0x%s\n", topic.c_str(), bytesToHex(payload, plength).c_str());
         else
             Serial.println("MQTT! publish failed, is the message too long ? (see setMaxPacketSize())"); // This can occurs if the message is too long according to the maximum defined in PubsubClient.h
     }
@@ -834,4 +868,18 @@ String ThingsCloudMQTT::getEspChipUniqueId()
     String uniqueId = String(chipId, HEX);
     uniqueId.toUpperCase();
     return uniqueId;
+}
+
+String ThingsCloudMQTT::bytesToHex(const uint8_t buf[], size_t size)
+{
+    String hex = "";
+    for (int i = 0; i < size; i++)
+    {
+        if (buf[i] < 0x10)
+        {
+            hex += "0";
+        }
+        hex += String(buf[i], HEX);
+    }
+    return hex;
 }

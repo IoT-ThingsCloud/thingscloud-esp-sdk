@@ -144,7 +144,8 @@ public:
 
     bool reportAttributes(const String attributes);
     bool reportEvent(const uint16_t id, const String event);
-    bool reportData(const String topic, std::vector<unsigned char> data);
+    bool reportData(const String &topic, const String &payload);
+    bool reportData(const String &topic, const uint8_t *payload, unsigned int plength);
     bool getAttributes();
     bool onAttributesGetResponse(MessageReceivedCallbackWithTopic messageReceivedCallbackWithTopic);
     bool onAttributesGetResponse(MessageReceivedCallbackJSONWithTopic messageReceivedCallbackWithTopic);
@@ -156,6 +157,7 @@ public:
 
     bool setMaxPacketSize(const uint16_t size);
     bool publish(const String &topic, const String &payload, bool retain = false);
+    bool publish(const String &topic, const uint8_t *payload, unsigned int plength);
     bool subscribe(const String &topic, MessageReceivedCallback messageReceivedCallback, uint8_t qos = 0);
     bool subscribe(const String &topic, MessageReceivedCallbackJSON messageReceivedCallback, uint8_t qos = 0);
     bool subscribe(const String &topic, MessageReceivedCallbackWithTopic messageReceivedCallback, uint8_t qos = 0);
@@ -200,6 +202,7 @@ private:
     bool mqttTopicMatch(const String &topic1, const String &topic2);
     void mqttMessageReceivedCallback(char *topic, uint8_t *payload, unsigned int length);
     String getEspChipUniqueId();
+    String bytesToHex(const uint8_t buf[], size_t size);
 };
 
 #endif
