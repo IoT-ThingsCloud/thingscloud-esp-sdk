@@ -1,29 +1,61 @@
 # thingscloud-esp-sdk
+
 ThingsCloud IoT Platform WiFi and MQTT client library for ESP8266/ESP32 based boards using arduino platform.
 
-ThingsCloud 推出了基于 ESP32/ESP8266 Arduino 的 SDK，方便智能硬件厂商和开发者快速将设备接入 ThingsCloud 云平台并生成物联网应用，完成物联网方案的快速落地。
+ThingsCloud 推出了基于 ESP32/ESP8266 Arduino 框架的 SDK，方便智能硬件厂商和开发者快速将设备接入 ThingsCloud 云平台并生成物联网应用，完成物联网方案的快速落地。
 
 ## SDK 支持特性
 
-- WiFi 基本连接，指定 WiFi SSID/Password，连接到固定 AP。
-- WiFi 配网，可使用 ThingsX iOS/Android App，为模组快速配置 WiFi 连接信息。适合多设备的量产。
-- MQTT 一机一密，为每个模组烧录独立的证书。
-- MQTT 一型一密，为所有模组烧录相同的固件，每个模组自动获取证书。适合多设备的量产。
-- 支持 ThingsCloud MQTT 接入协议，几行代码就可以实现设备和云平台的双向数据实时传输，包括属性上报和下发、事件上报、命令接收、自定义数据流等。
-- 固件 OTA 升级，结合 ThingsCloud 的 OTA 版本管理功能。
+- 实现 WiFi 基本连接，可指定 WiFi SSID/Password，连接到固定 AP。
+- 实现 WiFi 手机配网，可使用 [ThingsX](https://www.thingscloud.xyz/docs/guide/customer-app/common-app.html) iOS/Android App，为模组快速配置 WiFi 连接信息，而不需要事先将 Wifi SSID/Password 写入固件中。适合设备量产，由使用者自行配置 WiFi。
+- 实现 MQTT 一机一密接入 ThingsCloud，为每个模组单独烧录 MQTT 证书。
+- 实现 MQTT 一型一密接入 ThingsCloud，为所有模组烧录相同的固件，每个模组自动获取 MQTT 证书。适合设备量产。
+- 全面支持 [ThingsCloud MQTT 接入协议](https://www.thingscloud.xyz/docs/guide/connect-device/mqtt.html)，几行代码就可以实现设备和云平台的双向数据实时传输，包括属性上报、属性下发接收、事件上报、命令下发接收、自定义数据流上报和接收等。
+- 支持固件 OTA 升级，结合 ThingsCloud 的 OTA 版本管理功能。
+
+## 支持模组型号
+
+- ESP32
+    - ESP32-S2
+    - ESP32-S3
+    - ESP32-C3
+    - ESP32-C6（需安装 ESP32 开发板 v3.x.x）
+- ESP8266/ESP8285
+
+
+## 安装开发板依赖
+
+SDK 基于 Arduino 框架，因此您需要先完成 Arduino 框架中 ESP32/ESP8266 的开发板依赖安装。
+
+这里以 Arduino IDE 为例，进入 **文件 > 首选项**。
+
+ESP32 开发板添加以下开发板仓库地址： 
+```
+https://espressif.github.io/arduino-esp32/package_esp32_index.json
+```
+
+ESP8266 开发板添加以下开发板仓库地址：
+```
+https://arduino.esp8266.com/stable/package_esp8266com_index.json
+```
+
+然后在开发板管理器中，根据您的实际需要，搜索并安装 ESP32 或 ESP8266 开发板。
+
+ESP32 开发板支持 v2.x.x 和 v3.x.x，如下图：
+
+![](https://img-1300291923.cos.ap-beijing.myqcloud.com/articles/2024/20250611101202_80999e59ebfbc152360b35027a225247.png)
+
+ESP8266 开发板支持 v3.x.x，如下图：
+
+![](https://img-1300291923.cos.ap-beijing.myqcloud.com/articles/2024/20250611101336_032f553d8e401dabd72f729ba022f093.png)
 
 
 ## 安装 SDK
 
-[ThingsCloud ESP32/ESP8266 Arduino SDK](https://www.thingscloud.xyz/docs/tutorials/connect-device/esp32-arduino-sdk.html)
+更详细的安装方法可参考官网 [ThingsCloud ESP32/ESP8266 Arduino SDK](https://www.thingscloud.xyz/docs/tutorials/connect-device/esp32-arduino-sdk.html)
 
 支持通过以下方式安装：
 
-### **PlatformIO**
-
-使用 VSCode + PlatformIO 开发方式，可以直接在 PlatformIO Library 中搜索并添加到项目中。
-
-![articles/2022/20230110235709_ae88b059b93a179e98945a207f6576f9.png](https://img-1300291923.cos.ap-beijing.myqcloud.com/articles/2022/20230110235709_ae88b059b93a179e98945a207f6576f9.png)
 
 ### **Arduino**
 
@@ -37,8 +69,14 @@ ThingsCloud 推出了基于 ESP32/ESP8266 Arduino 的 SDK，方便智能硬件�
 
 下载代码仓库最新的 release 压缩包，解压缩后，将整个目录放置在 `Arduino\libraries` 中。
 
+### **PlatformIO**
 
-## 安装其它依赖
+使用 VSCode + PlatformIO 开发方式，可以直接在 PlatformIO Library 中搜索并添加到项目中。
+
+![articles/2022/20230110235709_ae88b059b93a179e98945a207f6576f9.png](https://img-1300291923.cos.ap-beijing.myqcloud.com/articles/2022/20230110235709_ae88b059b93a179e98945a207f6576f9.png)
+
+
+## 安装其它依赖库
 
 SDK 正常运行需要以下依赖库：
 
