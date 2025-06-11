@@ -39,6 +39,10 @@ ESP8266 开发板添加以下开发板仓库地址：
 https://arduino.esp8266.com/stable/package_esp8266com_index.json
 ```
 
+如下图：
+
+![](https://img-1300291923.cos.ap-beijing.myqcloud.com/articles/2024/20250611101858_2180114cc1fea55dcdd37cce87e5ff3c.png)
+
 然后在开发板管理器中，根据您的实际需要，搜索并安装 ESP32 或 ESP8266 开发板。
 
 ESP32 开发板支持 v2.x.x 和 v3.x.x，如下图：
