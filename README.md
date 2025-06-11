@@ -49,7 +49,7 @@ ESP32 开发板支持 v2.x.x 和 v3.x.x，如下图：
 
 ![](https://img-1300291923.cos.ap-beijing.myqcloud.com/articles/2024/20250611101202_80999e59ebfbc152360b35027a225247.png)
 
-ESP8266 开发板支持 v3.x.x，如下图：
+ESP8266 开发板支持 v2.x.x 和 v3.x.x，如下图：
 
 ![](https://img-1300291923.cos.ap-beijing.myqcloud.com/articles/2024/20250611101336_032f553d8e401dabd72f729ba022f093.png)
 
@@ -65,9 +65,10 @@ ESP8266 开发板支持 v3.x.x，如下图：
 
 #### 方法1. 通过 Arduino 库管理器安装（推荐）
 
-进入 Arduino 菜单的 `工具 > 管理库`，搜索 `ThingsCloud`，选择最新版本，点击安装。有版本更新时，需要在这里点击更新。
+进入 Arduino 菜单的 `工具 > 管理库`，搜索 `ThingsCloud`，**选择最新版本**，点击安装。有版本更新时，需要在这里点击更新。
 
-![articles/2023/20230112114700_f7bb8f38867201e9301b4450e31b65e0.png](https://img-1300291923.cos.ap-beijing.myqcloud.com/articles/2023/20230112114700_f7bb8f38867201e9301b4450e31b65e0.png)
+![](https://img-1300291923.cos.ap-beijing.myqcloud.com/articles/2024/20250611102233_59bc8eb4bed4c471c3d1203977d14d09.png)
+
 
 #### 方法2. 手动安装
 
