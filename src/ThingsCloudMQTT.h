@@ -21,6 +21,7 @@
 
 #else // for ESP32
 
+#include <WiFi.h>
 #include <WiFiClient.h>
 #include <HTTPClient.h>
 #ifndef ESP_getChipId
