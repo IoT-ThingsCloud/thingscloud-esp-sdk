@@ -17,7 +17,7 @@ ThingsCloudMQTT client(
     THINGSCLOUD_DEVICE_ACCESS_TOKEN,
     THINGSCLOUD_PROJECT_KEY);
 
-// 设置继电器的输入引脚
+// 设置控制继电器的GPIO输出引脚，可根据实际情况调整
 #define RELAY_PIN 5
 
 void setup()
