@@ -131,9 +131,9 @@ SDK 正常运行需要以下依赖库：
 
 - dht_sensor：dht11/21/22 温湿度传感器上报数据。[ESP32 + DHT11/DHT22 温湿度传感器接入 ThingsCloud](https://www.thingscloud.xyz/docs/tutorials/connect-device/esp32-arduino-dht11-sensor.html)
 - relay_control：ThingsCloud 下发控制继电器。[ESP32 + 继电器模块接入 ThingsCloud](https://www.thingscloud.xyz/docs/tutorials/connect-device/esp32-arduino-relay-control.html)
-- relay_control_advanced：ThingsCloud 下发控制继电器，以及命令下发控制继电器延迟反转。
+- relay_control_advanced：ThingsCloud 下发控制继电器，以及命令下发控制继电器延迟反转（适合电磁阀、电磁锁等短时间上电）。
 - esp01_relay：针对 ESP8266 ESP01 继电器板，支持下发属性控制继电器。
-- esp01_relay_advanced：针对 ESP8266 ESP01 继电器板，支持 ThingsCloud 下发属性控制继电器，以及命令下发控制继电器延迟反转。
+- esp01_relay_advanced：针对 ESP8266 ESP01 继电器板，支持 ThingsCloud 下发属性控制继电器，以及命令下发控制继电器延迟反转（适合电磁阀、电磁锁等短时间上电）。
 - dtu_uart_stream：实现透传 DTU，主控 MCU 可通过 UART 和 ESP32 UART1 通信，云平台设备使用自定义数据流，支持二进制、文本、JSON，可通过规则引擎和设备属性进行互转。支持 WiFi 配网。
 - dtu_uart_json：实现透传 DTU，主控 MCU 可通过 UART 和 ESP32 UART1 通信，上下行数据使用 JSON 格式，实现设备属性上报和属性下发。支持 WiFi 配网。
 - command_ota：使用 ThingsCloud OTA，实现 ESP32 固件升级。
