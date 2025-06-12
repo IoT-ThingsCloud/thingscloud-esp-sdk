@@ -94,7 +94,7 @@ SDK 正常运行需要以下依赖库：
 
 - [快速上手控制台](https://www.thingscloud.xyz/docs/guide/quickstart/signin-console.html)
 - [如何获得设备证书？](https://www.thingscloud.xyz/docs/guide/connect-device/device-certificate.html)
-- [ThingsCloud MQTT 接入文档](https://docs.thingscloud.xyz/guide/connect-device/mqtt.html)
+- [ThingsCloud MQTT 接入文档](https://www.thingscloud.xyz/docs/guide/connect-device/mqtt.html)
 
 
 ## 示例
