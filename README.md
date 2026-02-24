@@ -188,6 +188,8 @@ SDK 正常运行需要以下依赖库：
 | 示例名称 | 说明 | 教程链接 |
 |----------|------|----------|
 | `dht_sensor` | DHT11/DHT21/DHT22 温湿度传感器上报数据 | [ESP32 + DHT11/DHT22 温湿度传感器接入 ThingsCloud](https://www.thingscloud.xyz/docs/tutorials/connect-device/esp32-arduino-dht11-sensor.html) |
+| `bh1750_sensor` | BH1750 光照传感器采集环境光照亮度（I2C） | - |
+| `mpu6050_sensor` | MPU6050 六轴传感器采集加速度、陀螺仪、温度（I2C） | - |
 
 #### 🔌 继电器控制类
 
@@ -198,6 +200,13 @@ SDK 正常运行需要以下依赖库：
 | `esp01_relay` | ESP8266 ESP01 继电器板属性控制 | ESP01 继电器模块 |
 | `esp01_relay_advanced` | ESP01 继电器板高级控制（属性 + 命令延迟反转） | ESP01 电磁阀/电磁锁 |
 | `esp01_relay_wifi_provisioning` | ESP01 继电器板 WiFi 配网版 | 用户自行配网 |
+
+#### 💡 执行器控制类
+
+| 示例名称 | 说明 | 功能特点 |
+|----------|------|----------|
+| `pwm_control` | ESP32 PWM 输出控制 | 属性/命令下发控制 LED 亮度，支持渐变效果 |
+| `servo_control` | 舵机角度控制 | 属性/命令下发控制舵机角度，支持平滑移动和扫描 |
 
 #### 🔗 DTU 透传类
 
