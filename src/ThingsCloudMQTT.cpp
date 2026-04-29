@@ -628,6 +628,18 @@ bool ThingsCloudMQTT::unsubscribe(const String &topic)
     return true;
 }
 
+void ThingsCloudMQTT::disconnect()
+{
+    if (_mqttClient.connected())
+    {
+        _mqttClient.disconnect();
+        _mqttConnected = false;
+
+        if (_enableSerialLogs)
+            Serial.println("MQTT: Gracefully disconnected from broker.");
+    }
+}
+
 void ThingsCloudMQTT::setWifiCredentials(const char *wifiSsid, const char *wifiPassword)
 {
     _wifiSsid = wifiSsid;

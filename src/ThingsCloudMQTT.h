@@ -164,6 +164,7 @@ public:
     bool subscribe(const String &topic, MessageReceivedCallbackWithTopic messageReceivedCallback, uint8_t qos = 0);
     bool subscribe(const String &topic, MessageReceivedCallbackJSONWithTopic messageReceivedCallback, uint8_t qos = 0);
     bool unsubscribe(const String &topic); // Unsubscribes from the topic, if it exists, and removes it from the CallbackList.
+    void disconnect();                     // Gracefully disconnect from the MQTT broker
 
     // Wifi related
     void setWifiCredentials(const char *wifiSsid, const char *wifiPassword);
