@@ -148,10 +148,10 @@ SDK 正常运行需要以下依赖库：
 
 | 示例名称 | 说明 | 适用场景 |
 |----------|------|----------|
-| `mqtt_connect_with_access_token` | 每个设备使用自己的 AccessToken 连接 ThingsCloud | 开发调试、小批量设备 |
-| `mqtt_connect_with_device_key` | 每个设备使用 DeviceKey 请求 AccessToken，连接 ThingsCloud | 设备量产 |
-| `mqtt_connect_with_device_key_auto_create_device` | 使用 DeviceKey 请求 AccessToken，如果设备不存在则自动创建 | 批量自动注册设备 |
-| `mqtt_connect_with_auto_device_key` | 每个设备自动生成唯一的 DeviceKey，请求 AccessToken | 一型一密量产 |
+| [`mqtt_connect_with_access_token`](examples/01.WiFi_Basic/mqtt_connect_with_access_token/) | 每个设备使用自己的 AccessToken 连接 ThingsCloud | 开发调试、小批量设备 |
+| [`mqtt_connect_with_device_key`](examples/01.WiFi_Basic/mqtt_connect_with_device_key/) | 每个设备使用 DeviceKey 请求 AccessToken，连接 ThingsCloud | 设备量产 |
+| [`mqtt_connect_with_device_key_auto_create_device`](examples/01.WiFi_Basic/mqtt_connect_with_device_key_auto_create_device/) | 使用 DeviceKey 请求 AccessToken，如果设备不存在则自动创建 | 批量自动注册设备 |
+| [`mqtt_connect_with_auto_device_key`](examples/01.WiFi_Basic/mqtt_connect_with_auto_device_key/) | 每个设备自动生成唯一的 DeviceKey，请求 AccessToken | 一型一密量产 |
 
 ---
 
@@ -161,8 +161,8 @@ SDK 正常运行需要以下依赖库：
 
 | 示例名称 | 说明 | 功能特点 |
 |----------|------|----------|
-| `wifi_provisioning_cliam_device` | WiFi 配网模式示例 | 用户完成配网后领取设备 |
-| `wifi_provisioning_reset` | 配网重置示例 | 通过长按按键重置配网信息 |
+| [`wifi_provisioning_cliam_device`](examples/02.WiFi_Provisioning_AP_Mode/wifi_provisioning_cliam_device/) | WiFi 配网模式示例 | 用户完成配网后领取设备 |
+| [`wifi_provisioning_reset`](examples/02.WiFi_Provisioning_AP_Mode/wifi_provisioning_reset/) | 配网重置示例 | 通过长按按键重置配网信息 |
 
 ---
 
@@ -172,10 +172,10 @@ SDK 正常运行需要以下依赖库：
 
 | 示例名称 | 说明 | 涉及功能 |
 |----------|------|----------|
-| `mqtt_attributes` | 属性上报与下发 | 设备上报属性、接收云平台下发属性、读取云平台设备属性 |
-| `mqtt_report_event` | 事件上报 | 设备向云平台上报事件 |
-| `mqtt_recv_command` | 命令接收 | 设备接收云平台下发的命令 |
-| `mqtt_custom_data` | 自定义数据流 | 自定义 Topic 收发数据 |
+| [`mqtt_attributes`](examples/03.MQTT_Communicate/mqtt_attributes/) | 属性上报与下发 | 设备上报属性、接收云平台下发属性、读取云平台设备属性 |
+| [`mqtt_report_event`](examples/03.MQTT_Communicate/mqtt_report_event/) | 事件上报 | 设备向云平台上报事件 |
+| [`mqtt_recv_command`](examples/03.MQTT_Communicate/mqtt_recv_command/) | 命令接收 | 设备接收云平台下发的命令 |
+| [`mqtt_custom_data`](examples/03.MQTT_Communicate/mqtt_custom_data/) | 自定义数据流 | 自定义 Topic 收发数据 |
 
 ---
 
@@ -187,33 +187,33 @@ SDK 正常运行需要以下依赖库：
 
 | 示例名称 | 说明 | 教程链接 |
 |----------|------|----------|
-| `dht_sensor` | DHT11/DHT21/DHT22 温湿度传感器上报数据 | [ESP32 + DHT11/DHT22 温湿度传感器接入 ThingsCloud](https://www.thingscloud.xyz/docs/tutorials/connect-device/esp32-arduino-dht11-sensor.html) |
-| `bh1750_sensor` | BH1750 光照传感器采集环境光照亮度（I2C） | - |
-| `mpu6050_sensor` | MPU6050 六轴传感器采集加速度、陀螺仪、温度（I2C） | - |
+| [`dht_sensor`](examples/10.IoT_Tutorials/dht_sensor/) | DHT11/DHT21/DHT22 温湿度传感器上报数据 | [ESP32 + DHT11/DHT22 温湿度传感器接入 ThingsCloud](https://www.thingscloud.xyz/docs/tutorials/connect-device/esp32-arduino-dht11-sensor.html) |
+| [`bh1750_sensor`](examples/10.IoT_Tutorials/bh1750_sensor/) | BH1750 光照传感器采集环境光照亮度（I2C） | - |
+| [`mpu6050_sensor`](examples/10.IoT_Tutorials/mpu6050_sensor/) | MPU6050 六轴传感器采集加速度、陀螺仪、温度（I2C） | - |
 
 #### 🔌 继电器控制类
 
 | 示例名称 | 说明 | 适用场景 |
 |----------|------|----------|
-| `relay_control` | ThingsCloud 下发属性控制继电器 | 智能开关、灯光控制 |
-| `relay_control_advanced` | 属性控制 + 命令控制延迟反转 | 电磁阀、电磁锁等短时间上电设备 |
-| `esp01_relay` | ESP8266 ESP01 继电器板属性控制 | ESP01 继电器模块 |
-| `esp01_relay_advanced` | ESP01 继电器板高级控制（属性 + 命令延迟反转） | ESP01 电磁阀/电磁锁 |
-| `esp01_relay_wifi_provisioning` | ESP01 继电器板 WiFi 配网版 | 用户自行配网 |
+| [`relay_control`](examples/10.IoT_Tutorials/relay_control/) | ThingsCloud 下发属性控制继电器 | 智能开关、灯光控制 |
+| [`relay_control_advanced`](examples/10.IoT_Tutorials/relay_control_advanced/) | 属性控制 + 命令控制延迟反转 | 电磁阀、电磁锁等短时间上电设备 |
+| [`esp01_relay`](examples/10.IoT_Tutorials/esp01_relay/) | ESP8266 ESP01 继电器板属性控制 | ESP01 继电器模块 |
+| [`esp01_relay_advanced`](examples/10.IoT_Tutorials/esp01_relay_advanced/) | ESP01 继电器板高级控制（属性 + 命令延迟反转） | ESP01 电磁阀/电磁锁 |
+| [`esp01_relay_wifi_provisioning`](examples/10.IoT_Tutorials/esp01_relay_wifi_provisioning/) | ESP01 继电器板 WiFi 配网版 | 用户自行配网 |
 
 #### 💡 执行器控制类
 
 | 示例名称 | 说明 | 功能特点 |
 |----------|------|----------|
-| `pwm_control` | ESP32 PWM 输出控制 | 属性/命令下发控制 LED 亮度，支持渐变效果 |
-| `servo_control` | 舵机角度控制 | 属性/命令下发控制舵机角度，支持平滑移动和扫描 |
+| [`pwm_control`](examples/10.IoT_Tutorials/pwm_control/) | ESP32 PWM 输出控制 | 属性/命令下发控制 LED 亮度，支持渐变效果 |
+| [`servo_control`](examples/10.IoT_Tutorials/servo_control/) | 舵机角度控制 | 属性/命令下发控制舵机角度，支持平滑移动和扫描 |
 
 #### 🔗 DTU 透传类
 
 | 示例名称 | 说明 | 数据格式 | 特点 |
 |----------|------|----------|------|
-| `dtu_uart_stream` | UART 透传 DTU | 二进制/文本/JSON | 自定义数据流，支持规则引擎转换 |
-| `dtu_uart_json` | UART 透传 DTU | JSON | 属性上报和属性下发 |
+| [`dtu_uart_stream`](examples/10.IoT_Tutorials/dtu_uart_stream/) | UART 透传 DTU | 二进制/文本/JSON | 自定义数据流，支持规则引擎转换 |
+| [`dtu_uart_json`](examples/10.IoT_Tutorials/dtu_uart_json/) | UART 透传 DTU | JSON | 属性上报和属性下发 |
 
 > 💡 DTU 示例中，主控 MCU 可通过 UART 和 ESP32 UART1 通信，支持 WiFi 配网。
 
@@ -221,14 +221,14 @@ SDK 正常运行需要以下依赖库：
 
 | 示例名称 | 说明 | 功能特点 |
 |----------|------|----------|
-| `esp32s3_gc2145_image_upload` | ESP32S3 + GC2145 摄像头拍照上传 | BOOT 键/命令触发拍照，JPEG 压缩后上传 ThingsCloud，支持属性调节分辨率与画质 |
-| `esp32s3_gc2145_image_upload_wifi_provisioning` | ESP32S3 + GC2145 摄像头拍照上传（AP 配网版） | 基于上例增加 AP 配网模式，支持 ThingsX App 配网并自动创建设备，长按 BOOT 键 5 秒清空配网信息 |
+| [`esp32s3_gc2145_image_upload`](examples/10.IoT_Tutorials/esp32s3_gc2145_image_upload/) | ESP32S3 + GC2145 摄像头拍照上传 | BOOT 键/命令触发拍照，JPEG 压缩后上传 ThingsCloud，支持属性调节分辨率与画质 |
+| [`esp32s3_gc2145_image_upload_wifi_provisioning`](examples/10.IoT_Tutorials/esp32s3_gc2145_image_upload_wifi_provisioning/) | ESP32S3 + GC2145 摄像头拍照上传（AP 配网版） | 基于上例增加 AP 配网模式，支持 ThingsX App 配网并自动创建设备，长按 BOOT 键 5 秒清空配网信息 |
 
 #### 🔄 OTA 升级
 
 | 示例名称 | 说明 | 功能 |
 |----------|------|------|
-| `command_ota` | ThingsCloud OTA 固件升级 | 通过命令触发 ESP32 固件升级 |
+| [`command_ota`](examples/10.IoT_Tutorials/command_ota/) | ThingsCloud OTA 固件升级 | 通过命令触发 ESP32 固件升级 |
 
 ---
 
