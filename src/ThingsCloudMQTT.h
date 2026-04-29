@@ -173,6 +173,7 @@ public:
     void executeDelayed(const unsigned long delay, DelayedExecutionCallback callback);
 
     inline const String getDeviceKey() const { return _deviceKey; };
+    inline const String getAccessToken() const { return _accessToken; };
 
     inline bool isConnected() const { return isWifiConnected() && isMqttConnected(); };                // Return true if everything is connected
     inline bool isWifiConnected() const { return _wifiConnected; };                                    // Return true if wifi is connected
