@@ -1,3 +1,7 @@
+/**
+ * 功能介绍：使用 SDK 自动生成的 DeviceKey 动态获取证书连接 MQTT，并定时上报模拟传感器数据。
+ */
+
 #include <ThingsCloudWiFiManager.h>
 #include <ThingsCloudMQTT.h>
 

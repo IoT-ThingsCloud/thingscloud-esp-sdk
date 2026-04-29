@@ -1,3 +1,7 @@
+/**
+ * 功能介绍：演示属性上报、获取及云平台下发属性的处理，根据下发的 relay1 属性控制继电器开关。
+ */
+
 #include <ThingsCloudWiFiManager.h>
 #include <ThingsCloudMQTT.h>
 

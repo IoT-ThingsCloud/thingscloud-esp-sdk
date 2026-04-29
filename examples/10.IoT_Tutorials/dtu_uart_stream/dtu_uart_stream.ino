@@ -1,3 +1,7 @@
+/**
+ * 功能介绍：作为 DTU 透传网关，通过 UART 接收流数据上报云端，并订阅自定义数据流主题将云端数据转发给下游设备。
+ */
+
 #include <ThingsCloudWiFiManager.h>
 #include <ThingsCloudMQTT.h>
 #include <HardwareSerial.h>

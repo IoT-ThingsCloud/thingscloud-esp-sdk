@@ -1,3 +1,7 @@
+/**
+ * 功能介绍：演示定时向 ThingsCloud 上报自定义事件。
+ */
+
 #include <ThingsCloudWiFiManager.h>
 #include <ThingsCloudMQTT.h>
 

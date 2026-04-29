@@ -1,3 +1,7 @@
+/**
+ * 功能介绍：通过 AP 配网模式连接 WiFi，支持 ThingsX App 配网并自动创建设备，定时上报模拟传感器数据。
+ */
+
 #include <ThingsCloudWiFiManager.h>
 #include <ThingsCloudMQTT.h>
 

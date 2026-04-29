@@ -1,3 +1,7 @@
+/**
+ * 功能介绍：演示接收并解析云平台下发的命令，实现 restart 命令重启设备功能。
+ */
+
 #include <ThingsCloudWiFiManager.h>
 #include <ThingsCloudMQTT.h>
 

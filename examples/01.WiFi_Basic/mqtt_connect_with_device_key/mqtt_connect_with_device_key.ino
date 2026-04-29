@@ -1,3 +1,7 @@
+/**
+ * 功能介绍：使用 DeviceKey 动态获取设备证书连接 ThingsCloud MQTT，并定时上报模拟传感器数据。
+ */
+
 #include <ThingsCloudWiFiManager.h>
 #include <ThingsCloudMQTT.h>
 

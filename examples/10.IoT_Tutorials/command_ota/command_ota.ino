@@ -1,3 +1,7 @@
+/**
+ * 功能介绍：演示通过云平台下发 otaUpgrade 命令执行 HTTP OTA 固件升级，并定时上报设备活跃信息。
+ */
+
 #include <ThingsCloudWiFiManager.h>
 #include <ThingsCloudMQTT.h>
 #include <HTTPUpdate.h>

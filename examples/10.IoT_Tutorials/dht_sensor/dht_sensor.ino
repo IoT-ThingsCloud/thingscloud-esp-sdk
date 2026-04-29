@@ -1,3 +1,7 @@
+/**
+ * 功能介绍：读取 DHT11 温湿度传感器数据，定时上报温度和湿度到 ThingsCloud。
+ */
+
 #include <ThingsCloudWiFiManager.h>
 #include <ThingsCloudMQTT.h>
 // 安装第三方依赖

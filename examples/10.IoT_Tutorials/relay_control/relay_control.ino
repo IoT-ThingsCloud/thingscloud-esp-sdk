@@ -1,3 +1,7 @@
+/**
+ * 功能介绍：基础继电器控制示例，接收云平台下发的 relay 属性开关继电器，并同步云端初始状态。
+ */
+
 #include <ThingsCloudWiFiManager.h>
 #include <ThingsCloudMQTT.h>
 

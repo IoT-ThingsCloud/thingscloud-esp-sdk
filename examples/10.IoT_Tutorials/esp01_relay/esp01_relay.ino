@@ -1,3 +1,7 @@
+/**
+ * 功能介绍：ESP-01 继电器控制示例，接收云平台下发的 relay 属性控制继电器开关。
+ */
+
 #include <ThingsCloudWiFiManager.h>
 #include <ThingsCloudMQTT.h>
 

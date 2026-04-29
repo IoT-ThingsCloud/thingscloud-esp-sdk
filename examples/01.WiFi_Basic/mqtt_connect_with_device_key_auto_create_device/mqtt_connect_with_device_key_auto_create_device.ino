@@ -1,3 +1,7 @@
+/**
+ * 功能介绍：使用 DeviceKey 连接 MQTT，支持自动创建设备，并定时上报模拟传感器数据。
+ */
+
 #include <ThingsCloudWiFiManager.h>
 #include <ThingsCloudMQTT.h>
 

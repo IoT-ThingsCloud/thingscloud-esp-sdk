@@ -1,3 +1,7 @@
+/**
+ * 功能介绍：高级继电器控制示例，支持属性下发和命令控制继电器，含延时自动反转状态功能。
+ */
+
 #include <ThingsCloudWiFiManager.h>
 #include <ThingsCloudMQTT.h>
 

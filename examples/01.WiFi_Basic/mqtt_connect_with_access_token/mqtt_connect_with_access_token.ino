@@ -1,3 +1,7 @@
+/**
+ * 功能介绍：使用设备 AccessToken 证书连接 ThingsCloud MQTT，并定时上报模拟传感器属性数据。
+ */
+
 #include <ThingsCloudWiFiManager.h>
 #include <ThingsCloudMQTT.h>
 

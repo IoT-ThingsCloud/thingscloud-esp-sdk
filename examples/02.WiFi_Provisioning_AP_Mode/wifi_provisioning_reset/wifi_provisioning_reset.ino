@@ -1,3 +1,7 @@
+/**
+ * 功能介绍：通过 AP 配网模式连接 WiFi，支持按键长按重置配网信息，定时上报模拟传感器数据。
+ */
+
 #include <ThingsCloudWiFiManager.h>
 #include <ThingsCloudMQTT.h>
 

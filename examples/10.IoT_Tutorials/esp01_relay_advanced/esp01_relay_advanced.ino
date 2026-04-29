@@ -1,3 +1,7 @@
+/**
+ * 功能介绍：ESP-01 高级继电器控制，支持属性下发和命令控制继电器，并实现延时自动反转状态。
+ */
+
 #include <ThingsCloudWiFiManager.h>
 #include <ThingsCloudMQTT.h>
 
