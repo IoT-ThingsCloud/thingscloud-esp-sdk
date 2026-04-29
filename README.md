@@ -217,6 +217,13 @@ SDK 正常运行需要以下依赖库：
 
 > 💡 DTU 示例中，主控 MCU 可通过 UART 和 ESP32 UART1 通信，支持 WiFi 配网。
 
+#### 📷 摄像头/图像类
+
+| 示例名称 | 说明 | 功能特点 |
+|----------|------|----------|
+| `esp32s3_gc2145_image_upload` | ESP32S3 + GC2145 摄像头拍照上传 | BOOT 键/命令触发拍照，JPEG 压缩后上传 ThingsCloud，支持属性调节分辨率与画质 |
+| `esp32s3_gc2145_image_upload_wifi_provisioning` | ESP32S3 + GC2145 摄像头拍照上传（AP 配网版） | 基于上例增加 AP 配网模式，支持 ThingsX App 配网并自动创建设备，长按 BOOT 键 5 秒清空配网信息 |
+
 #### 🔄 OTA 升级
 
 | 示例名称 | 说明 | 功能 |
