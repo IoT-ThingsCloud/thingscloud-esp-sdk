@@ -40,7 +40,7 @@ const char *WIFI_PASSWORD = "";
 #define THINGSCLOUD_DEVICE_ACCESS_TOKEN ""
 #define THINGSCLOUD_PROJECT_KEY ""
 
-// ThingsCloud 图片上传配置（请联系技术支持获取 endpoint）
+// ThingsCloud 图片上传配置（企业版支持设备图片上传，请联系技术支持获取 endpoint）
 const char *THINGSCLOUD_ENDPOINT = "";
 const char *THINGSCLOUD_IDENTIFIER = "";
 const char *THINGSCLOUD_REGION = "";
