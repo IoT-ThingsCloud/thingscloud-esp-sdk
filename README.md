@@ -199,7 +199,7 @@ SDK 正常运行需要以下依赖库：
 | [`relay_control_advanced`](examples/10.IoT_Tutorials/relay_control_advanced/) | 属性控制 + 命令控制延迟反转 | 电磁阀、电磁锁等短时间上电设备 |
 | [`esp01_relay`](examples/10.IoT_Tutorials/esp01_relay/) | ESP8266 ESP01 继电器板属性控制 | ESP01 继电器模块 |
 | [`esp01_relay_advanced`](examples/10.IoT_Tutorials/esp01_relay_advanced/) | ESP01 继电器板高级控制（属性 + 命令延迟反转） | ESP01 电磁阀/电磁锁 |
-| [`esp01_relay_wifi_provisioning`](examples/10.IoT_Tutorials/esp01_relay_wifi_provisioning/) | ESP01 继电器板 WiFi 配网版 | 用户自行配网 |
+| [`esp01_relay_wifi_provisioning`](examples/10.IoT_Tutorials/esp01_relay_wifi_provisioning/) | ESP01 继电器板 WiFi 配网版 | 支持 ThingsX App 配网并自动创建设备，动态获取证书 |
 
 #### 💡 执行器控制类
 
@@ -223,6 +223,7 @@ SDK 正常运行需要以下依赖库：
 |----------|------|----------|
 | [`esp32s3_gc2145_image_upload`](examples/10.IoT_Tutorials/esp32s3_gc2145_image_upload/) | ESP32S3 + GC2145 摄像头拍照上传 | BOOT 键/命令触发拍照，JPEG 压缩后上传 ThingsCloud，支持属性调节分辨率与画质 |
 | [`esp32s3_gc2145_image_upload_wifi_provisioning`](examples/10.IoT_Tutorials/esp32s3_gc2145_image_upload_wifi_provisioning/) | ESP32S3 + GC2145 摄像头拍照上传（AP 配网版） | 基于上例增加 AP 配网模式，支持 ThingsX App 配网并自动创建设备，长按 BOOT 键 5 秒清空配网信息 |
+| [`esp32s3-ov3660-image-upload`](examples/10.IoT_Tutorials/esp32s3-ov3660-image-upload/) | ESP32S3 + OV3660 摄像头拍照上传 | BOOT 键/命令触发拍照，JPEG 直出上传 ThingsCloud，支持 OV3660 特有画质参数（锐度、降噪等）调节，拍照带重试机制 |
 
 #### 🔄 OTA 升级
 
