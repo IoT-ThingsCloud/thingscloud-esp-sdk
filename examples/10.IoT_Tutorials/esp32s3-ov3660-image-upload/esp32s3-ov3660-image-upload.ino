@@ -1,9 +1,10 @@
 /**
- * ESP32S3-CAM GC2145 摄像头图像上传示例
+ * ESP32S3-CAM OV3660 摄像头图像上传示例
  *
- * 功能：通过 GC2145 摄像头采集图像，支持 BOOT 按键拍照和平台下发命令拍照，
+ * 功能：通过 OV3660 摄像头采集图像，支持 BOOT 按键拍照和平台下发命令拍照，
  *       通过 HTTP 上传到 ThingsCloud。支持平台下发属性配置摄像头分辨率、
- *       JPEG 压缩质量等参数，设备重启后生效。
+ *       JPEG 压缩质量、亮度、对比度、饱和度、锐度、降噪、白平衡、曝光等
+ *       OV3660 特有画质参数，大部分参数可立即生效。
  *
  * ============================================================
  *  Arduino IDE 开发板配置要求（烧录前必须检查）
@@ -14,13 +15,14 @@
  *                     或 Huge APP (3MB No OTA/1MB SPIFFS)
  *                     ← 必须选择大于默认分区的方案，否则固件可能无法编译或运行
  *  Flash Mode:        QIO 80MHz
+ *  Flash Size:        8MB (64Mb)
  *  Upload Speed:      921600
  * ============================================================
  *  依赖库版本要求:
  *    ThingsCloud_ESP_SDK >= 1.0.15
  * ============================================================
  *  验证通过的硬件:
- *    ESP32S3-CAM + GC2145 摄像头
+ *    ESP32S3-EYE + OV3660 摄像头
  * ============================================================
  */
 
@@ -30,7 +32,9 @@
 #include "Arduino.h"
 #include <WiFi.h>
 #include <HTTPClient.h>
-#include "img_converters.h"
+
+#define CAMERA_MODEL_ESP32S3_EYE
+#include "camera_pins.h"
 
 // ===================== 用户配置区域 =====================
 // 请把下面的占位符替换为您的实际信息
@@ -54,41 +58,36 @@ const char *THINGSCLOUD_REGION = "";
 // 使用 HTTPS 还是 HTTP（HTTP 更省内存和 CPU，推荐内网/测试用）
 #define THINGSCLOUD_USE_HTTPS false
 
-// =================== ESP-S3-EYE 引脚定义 ===================
-#define PWDN_GPIO_NUM -1
-#define RESET_GPIO_NUM -1
-#define XCLK_GPIO_NUM 15
-#define SIOD_GPIO_NUM 4
-#define SIOC_GPIO_NUM 5
-#define Y9_GPIO_NUM 16
-#define Y8_GPIO_NUM 17
-#define Y7_GPIO_NUM 18
-#define Y6_GPIO_NUM 12
-#define Y5_GPIO_NUM 10
-#define Y4_GPIO_NUM 8
-#define Y3_GPIO_NUM 9
-#define Y2_GPIO_NUM 11
-#define VSYNC_GPIO_NUM 6
-#define HREF_GPIO_NUM 7
-#define PCLK_GPIO_NUM 13
-
 #define BOOT_BUTTON_PIN 0
 
-// =================== 摄像头运行参数 ===================
-// 默认分辨率（GC2145 原生 4:3，16:9/9:16 会初始化失败）
-framesize_t current_frame_size = FRAMESIZE_XGA; // 1024x768
-// fmt2jpg 压缩质量（10~100，默认 80）
-int current_jpeg_quality = 80;
+// ===================== 摄像头运行参数 =====================
+// 默认分辨率（OV3660 支持 UXGA 1600x1200）
+framesize_t current_frame_size = FRAMESIZE_UXGA;
+// JPEG 压缩质量（0~63，数值越小质量越高，推荐 6~12）
+int current_jpeg_quality = 6;
+
+// OV3660 画质参数（可通过平台属性实时调节）
+int current_brightness = 1;       // 亮度：-2 ~ +2
+int current_contrast = 1;         // 对比度：-2 ~ +2
+int current_saturation = 0;       // 饱和度：-2 ~ +2
+int current_sharpness = 2;        // 锐度：0 ~ 3（OV3660 特有）
+int current_denoise = 1;          // 降噪：0 ~ 3
+int current_vflip = 1;            // 垂直翻转：0/1
+int current_hmirror = 0;          // 水平镜像：0/1
+int current_wb_mode = 0;          // 白平衡模式：0=自动, 1=日光, 2=阴天, 3=办公室, 4=家居
+int current_ae_level = 0;         // 曝光等级：-2 ~ +2
+int current_special_effect = 0;   // 特殊效果：0=关闭, 1=负片, 2=灰度, 3=红色色调, 4=绿色色调, 5=蓝色色调, 6=复古
+int current_dcw = 0;              // 降采样(DCW)：0/1
 
 bool camera_initialized = false;
 
-// =================== ThingsCloud MQTT ===================
+// ===================== ThingsCloud MQTT =====================
 ThingsCloudMQTT client(
     THINGSCLOUD_MQTT_HOST,
     THINGSCLOUD_DEVICE_ACCESS_TOKEN,
     THINGSCLOUD_PROJECT_KEY);
 
-// =================== 辅助函数：分辨率字符串 ↔ 枚举 ===================
+// ===================== 辅助函数：分辨率字符串 ↔ 枚举 =====================
 framesize_t parseFrameSize(const char *str)
 {
     if (strcmp(str, "QQVGA") == 0)
@@ -103,8 +102,12 @@ framesize_t parseFrameSize(const char *str)
         return FRAMESIZE_SVGA; // 800x600
     if (strcmp(str, "XGA") == 0)
         return FRAMESIZE_XGA; // 1024x768
-    // 默认返回 XGA
-    return FRAMESIZE_XGA;
+    if (strcmp(str, "SXGA") == 0)
+        return FRAMESIZE_SXGA; // 1280x1024
+    if (strcmp(str, "UXGA") == 0)
+        return FRAMESIZE_UXGA; // 1600x1200
+    // 默认返回 UXGA
+    return FRAMESIZE_UXGA;
 }
 
 const char *frameSizeToString(framesize_t size)
@@ -123,17 +126,22 @@ const char *frameSizeToString(framesize_t size)
         return "SVGA";
     case FRAMESIZE_XGA:
         return "XGA";
+    case FRAMESIZE_SXGA:
+        return "SXGA";
+    case FRAMESIZE_UXGA:
+        return "UXGA";
     default:
-        return "XGA";
+        return "UXGA";
     }
 }
 
-// =================== WiFi 连接 ===================
+// ===================== WiFi 连接 =====================
 void connectWiFi()
 {
     Serial.print("[日志] 连接 WiFi: ");
     Serial.println(WIFI_SSID);
     WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+    WiFi.setSleep(false);
 
     int retry = 0;
     while (WiFi.status() != WL_CONNECTED && retry < 30)
@@ -156,25 +164,86 @@ void connectWiFi()
     }
 }
 
-// =================== 上报当前摄像头属性到平台 ===================
+// ===================== 应用摄像头画质参数 =====================
+void applyCameraSettings(sensor_t *s)
+{
+    if (!s)
+        return;
+
+    // 基础翻转（ESP32S3-EYE 硬件安装方向）
+    s->set_vflip(s, current_vflip);
+    s->set_hmirror(s, current_hmirror);
+
+    // JPEG 质量
+    s->set_quality(s, current_jpeg_quality);
+
+    // 画质参数
+    s->set_brightness(s, current_brightness);
+    s->set_contrast(s, current_contrast);
+    s->set_saturation(s, current_saturation);
+    s->set_sharpness(s, current_sharpness);
+    s->set_denoise(s, current_denoise);
+
+    // 白平衡与曝光
+    s->set_whitebal(s, 1);
+    s->set_wb_mode(s, current_wb_mode);
+    s->set_exposure_ctrl(s, 1);
+    s->set_aec2(s, 1);
+    s->set_ae_level(s, current_ae_level);
+
+    // 自动增益
+    s->set_gain_ctrl(s, 1);
+    s->set_gainceiling(s, GAINCEILING_16X);
+
+    // 像素校正
+    s->set_bpc(s, 1);
+    s->set_wpc(s, 1);
+
+    // RAW Gamma
+    s->set_raw_gma(s, 1);
+
+    // 镜头校正
+    s->set_lenc(s, 1);
+
+    // 特殊效果与彩条
+    s->set_special_effect(s, current_special_effect);
+    s->set_colorbar(s, 0);
+
+    // 降采样
+    s->set_dcw(s, current_dcw);
+}
+
+// ===================== 上报当前摄像头属性到平台 =====================
 void reportCameraAttributes()
 {
-    StaticJsonDocument<256> doc;
+    StaticJsonDocument<512> doc;
     doc["frame_size"] = frameSizeToString(current_frame_size);
     doc["jpeg_quality"] = current_jpeg_quality;
+    doc["brightness"] = current_brightness;
+    doc["contrast"] = current_contrast;
+    doc["saturation"] = current_saturation;
+    doc["sharpness"] = current_sharpness;
+    doc["denoise"] = current_denoise;
+    doc["vflip"] = current_vflip;
+    doc["hmirror"] = current_hmirror;
+    doc["wb_mode"] = current_wb_mode;
+    doc["ae_level"] = current_ae_level;
+    doc["special_effect"] = current_special_effect;
+    doc["dcw"] = current_dcw;
     String payload;
     serializeJson(doc, payload);
     client.reportAttributes(payload);
     Serial.printf("[日志] 上报属性 -> %s\n", payload.c_str());
 }
 
-// =================== 处理平台属性（下发或初始读取） ===================
+// ===================== 处理平台属性（下发或初始读取） =====================
 // 注意：为避免运行时反复初始化摄像头导致 PSRAM 碎片化，
 // frame_size 属性只在重启后生效（写入全局变量，上报平台）。
-// jpeg_quality 可立即生效（仅影响 fmt2jpg 参数）。
+// jpeg_quality 及其他 sensor 参数可立即生效。
 void handleAttributes(const JsonObject &obj)
 {
     bool frame_size_changed = false;
+    sensor_t *s = camera_initialized ? esp_camera_sensor_get() : nullptr;
 
     if (obj.containsKey("frame_size"))
     {
@@ -192,78 +261,214 @@ void handleAttributes(const JsonObject &obj)
     if (obj.containsKey("jpeg_quality"))
     {
         int new_quality = obj["jpeg_quality"];
-        if (new_quality >= 10 && new_quality <= 100)
+        if (new_quality >= 0 && new_quality <= 63)
         {
             if (new_quality != current_jpeg_quality)
             {
-                Serial.printf("[日志] 更新 jpeg_quality: %d -> %d（立即生效）\n",
+                Serial.printf("[日志] 更新 jpeg_quality: %d -> %d\n",
                               current_jpeg_quality, new_quality);
                 current_jpeg_quality = new_quality;
+                if (s)
+                    s->set_quality(s, new_quality);
             }
         }
         else
         {
-            Serial.println("[警告] jpeg_quality 超出有效范围(10~100)，忽略");
+            Serial.println("[警告] jpeg_quality 超出有效范围(0~63)，忽略");
         }
+    }
+
+    if (obj.containsKey("brightness"))
+    {
+        int v = obj["brightness"];
+        if (v >= -2 && v <= 2 && v != current_brightness)
+        {
+            Serial.printf("[日志] 更新 brightness: %d -> %d\n", current_brightness, v);
+            current_brightness = v;
+            if (s)
+                s->set_brightness(s, v);
+        }
+    }
+
+    if (obj.containsKey("contrast"))
+    {
+        int v = obj["contrast"];
+        if (v >= -2 && v <= 2 && v != current_contrast)
+        {
+            Serial.printf("[日志] 更新 contrast: %d -> %d\n", current_contrast, v);
+            current_contrast = v;
+            if (s)
+                s->set_contrast(s, v);
+        }
+    }
+
+    if (obj.containsKey("saturation"))
+    {
+        int v = obj["saturation"];
+        if (v >= -2 && v <= 2 && v != current_saturation)
+        {
+            Serial.printf("[日志] 更新 saturation: %d -> %d\n", current_saturation, v);
+            current_saturation = v;
+            if (s)
+                s->set_saturation(s, v);
+        }
+    }
+
+    if (obj.containsKey("sharpness"))
+    {
+        int v = obj["sharpness"];
+        if (v >= 0 && v <= 3 && v != current_sharpness)
+        {
+            Serial.printf("[日志] 更新 sharpness: %d -> %d\n", current_sharpness, v);
+            current_sharpness = v;
+            if (s)
+                s->set_sharpness(s, v);
+        }
+    }
+
+    if (obj.containsKey("denoise"))
+    {
+        int v = obj["denoise"];
+        if (v >= 0 && v <= 3 && v != current_denoise)
+        {
+            Serial.printf("[日志] 更新 denoise: %d -> %d\n", current_denoise, v);
+            current_denoise = v;
+            if (s)
+                s->set_denoise(s, v);
+        }
+    }
+
+    if (obj.containsKey("vflip"))
+    {
+        int v = obj["vflip"];
+        if ((v == 0 || v == 1) && v != current_vflip)
+        {
+            Serial.printf("[日志] 更新 vflip: %d -> %d\n", current_vflip, v);
+            current_vflip = v;
+            if (s)
+                s->set_vflip(s, v);
+        }
+    }
+
+    if (obj.containsKey("hmirror"))
+    {
+        int v = obj["hmirror"];
+        if ((v == 0 || v == 1) && v != current_hmirror)
+        {
+            Serial.printf("[日志] 更新 hmirror: %d -> %d\n", current_hmirror, v);
+            current_hmirror = v;
+            if (s)
+                s->set_hmirror(s, v);
+        }
+    }
+
+    if (obj.containsKey("wb_mode"))
+    {
+        int v = obj["wb_mode"];
+        if (v >= 0 && v <= 4 && v != current_wb_mode)
+        {
+            Serial.printf("[日志] 更新 wb_mode: %d -> %d\n", current_wb_mode, v);
+            current_wb_mode = v;
+            if (s)
+                s->set_wb_mode(s, v);
+        }
+    }
+
+    if (obj.containsKey("ae_level"))
+    {
+        int v = obj["ae_level"];
+        if (v >= -2 && v <= 2 && v != current_ae_level)
+        {
+            Serial.printf("[日志] 更新 ae_level: %d -> %d\n", current_ae_level, v);
+            current_ae_level = v;
+            if (s)
+                s->set_ae_level(s, v);
+        }
+    }
+
+    if (obj.containsKey("special_effect"))
+    {
+        int v = obj["special_effect"];
+        if (v >= 0 && v <= 6 && v != current_special_effect)
+        {
+            Serial.printf("[日志] 更新 special_effect: %d -> %d\n", current_special_effect, v);
+            current_special_effect = v;
+            if (s)
+                s->set_special_effect(s, v);
+        }
+    }
+
+    if (obj.containsKey("dcw"))
+    {
+        int v = obj["dcw"];
+        if ((v == 0 || v == 1) && v != current_dcw)
+        {
+            Serial.printf("[日志] 更新 dcw: %d -> %d\n", current_dcw, v);
+            current_dcw = v;
+            if (s)
+                s->set_dcw(s, v);
+        }
+    }
+
+    // 动态修改 sensor 寄存器后，给 OV3660 一点稳定时间，
+    // 避免下一帧 DMA 捕获到异常空帧。
+    if (s)
+    {
+        delay(50);
     }
 
     // 上报当前实际属性，保持平台与设备状态同步
     reportCameraAttributes();
 }
 
-// =================== 拍照并上传到 ThingsCloud ===================
+// ===================== 拍照并上传到 ThingsCloud =====================
 void takePhotoAndUpload()
 {
-    // 拍照（RGB565）
-    camera_fb_t *fb = esp_camera_fb_get();
+    // 拍照（JPEG 直出）
+    // OV3660 在动态修改 sensor 参数后，可能需要丢弃 1~2 帧才能稳定，
+    // 因此加入重试机制，最多尝试 3 次。
+    camera_fb_t *fb = nullptr;
+    for (int retry = 0; retry < 3; retry++)
+    {
+        fb = esp_camera_fb_get();
+        if (fb)
+            break;
+        if (retry < 2)
+        {
+            Serial.printf("[警告] 拍照返回空帧，第 %d 次重试...\n", retry + 1);
+            delay(150);
+        }
+    }
     if (!fb)
     {
-        Serial.println("[错误] 拍照失败，返回空帧");
+        Serial.println("[错误] 拍照失败，连续 3 次返回空帧");
         return;
     }
 
-    Serial.printf("[成功] 拍照完成：%dx%d | 格式：RGB565 | 大小：%d 字节\n",
+    Serial.printf("[成功] 拍照完成：%dx%d | 格式：JPEG | 大小：%d 字节\n",
                   fb->width, fb->height, fb->len);
 
-    // ThingsCloud 只支持 JPEG/PNG/GIF/WebP/BMP，不支持 RGB565
-    // 所以必须转成 JPEG 再上传
-    uint8_t *jpg_buf = NULL;
-    size_t jpg_len = 0;
-    bool jpg_ok = fmt2jpg(fb->buf, fb->len, fb->width, fb->height,
-                          PIXFORMAT_RGB565, current_jpeg_quality, &jpg_buf, &jpg_len);
-
-    // 释放摄像头帧缓冲（转换完成后即可释放）
-    esp_camera_fb_return(fb);
-
-    if (jpg_ok && jpg_buf != NULL)
+    // ThingsCloud 单张图片限制 500KB
+    if (fb->len > 500 * 1024)
     {
-        Serial.printf("[成功] JPEG 转换完成：%d 字节\n", jpg_len);
+        Serial.println("[警告] 图片超过 500KB，ThingsCloud 可能拒绝上传");
+    }
 
-        // ThingsCloud 单张图片限制 500KB
-        if (jpg_len > 500 * 1024)
-        {
-            Serial.println("[警告] 图片超过 500KB，ThingsCloud 可能拒绝上传");
-        }
-
-        // 只有在 WiFi 连接时才上传
-        if (WiFi.status() == WL_CONNECTED)
-        {
-            uploadToThingsCloud(jpg_buf, jpg_len);
-        }
-        else
-        {
-            Serial.println("[错误] WiFi 未连接，跳过上传");
-        }
-
-        free(jpg_buf);
+    // 只有在 WiFi 连接时才上传
+    if (WiFi.status() == WL_CONNECTED)
+    {
+        uploadToThingsCloud(fb->buf, fb->len);
     }
     else
     {
-        Serial.println("[错误] JPEG 转换失败，可能内存不足");
+        Serial.println("[错误] WiFi 未连接，跳过上传");
     }
+
+    // 释放摄像头帧缓冲
+    esp_camera_fb_return(fb);
 }
 
-// =================== 处理云平台下发的命令 ===================
+// ===================== 处理云平台下发的命令 =====================
 void handleCommand(const JsonObject &command)
 {
     if (command.containsKey("method"))
@@ -292,7 +497,7 @@ void handleCommand(const JsonObject &command)
     }
 }
 
-// =================== 上传图片到 ThingsCloud ===================
+// ===================== 上传图片到 ThingsCloud =====================
 bool uploadToThingsCloud(uint8_t *image_buf, size_t image_len)
 {
     HTTPClient http;
@@ -327,7 +532,7 @@ bool uploadToThingsCloud(uint8_t *image_buf, size_t image_len)
     }
 }
 
-// =================== 必须实现的 MQTT 连接成功回调 ===================
+// ===================== 必须实现的 MQTT 连接成功回调 =====================
 void onMQTTConnect()
 {
     // 订阅获取属性的回复消息（设备上电时主动读取平台属性）
@@ -360,10 +565,10 @@ void setup()
     delay(1000);
 
     Serial.println();
-    Serial.println("===== ESP32S3-CAM MQTT + 按键拍照 + ThingsCloud 上传 =====");
+    Serial.println("===== ESP32S3-CAM OV3660 MQTT + 按键拍照 + ThingsCloud 上传 =====");
     Serial.println();
 
-    // 1. 连接 WiFi（保持和原始代码相同的顺序：先 WiFi，后摄像头）
+    // 1. 连接 WiFi
     connectWiFi();
     Serial.println();
 
@@ -406,12 +611,36 @@ void setup()
     config.pin_reset = RESET_GPIO_NUM;
     config.sccb_i2c_port = 1;
     config.xclk_freq_hz = 20000000;
-    config.pixel_format = PIXFORMAT_RGB565;
-    config.frame_size = current_frame_size;
-    config.jpeg_quality = 0;
-    config.fb_count = 2;
+    config.pixel_format = PIXFORMAT_JPEG;
+    config.grab_mode = CAMERA_GRAB_WHEN_EMPTY;
     config.fb_location = psramFound() ? CAMERA_FB_IN_PSRAM : CAMERA_FB_IN_DRAM;
-    config.grab_mode = CAMERA_GRAB_LATEST;
+
+    // 根据 PSRAM 情况配置分辨率与缓冲
+    if (psramFound())
+    {
+        config.frame_size = current_frame_size;
+        config.jpeg_quality = current_jpeg_quality;
+        config.fb_count = 2;
+        config.grab_mode = CAMERA_GRAB_LATEST;
+    }
+    else
+    {
+        // 无 PSRAM 时，如果 frame_size 过大则降级到 SVGA
+        if (current_frame_size > FRAMESIZE_SVGA)
+        {
+            Serial.println("[警告] 无 PSRAM，frame_size 过大，自动降级到 SVGA");
+            current_frame_size = FRAMESIZE_SVGA;
+        }
+        config.frame_size = current_frame_size;
+        config.jpeg_quality = current_jpeg_quality;
+        config.fb_count = 1;
+        config.fb_location = CAMERA_FB_IN_DRAM;
+    }
+
+#if defined(CAMERA_MODEL_ESP_EYE)
+    pinMode(13, INPUT_PULLUP);
+    pinMode(14, INPUT_PULLUP);
+#endif
 
     Serial.println("[日志] 摄像头初始化开始...");
     delay(100);
@@ -426,10 +655,13 @@ void setup()
     {
         camera_initialized = true;
         Serial.println("[成功] 摄像头初始化完成！");
+
+        // 应用画质参数
         sensor_t *s = esp_camera_sensor_get();
         if (s)
         {
-            Serial.printf("[信息] 传感器 PID: 0x%04X (GC2145)\n", s->id.PID);
+            Serial.printf("[信息] 传感器 PID: 0x%04X (OV3660)\n", s->id.PID);
+            applyCameraSettings(s);
         }
     }
 
@@ -451,7 +683,7 @@ void loop()
         return;
     }
 
-    // WiFi 断线时尝试重连（保持和原始代码相同的逻辑）
+    // WiFi 断线时尝试重连
     if (WiFi.status() != WL_CONNECTED)
     {
         static unsigned long last_reconnect = 0;
