@@ -65,7 +65,6 @@ void ThingsCloudWiFiManager::_end()
     _hasBegun = false;
     if (_userpersistent)
         WiFi.persistent(true); // reenable persistent, there is no getter we rely on _userpersistent
-                               // if(_usermode != WIFI_OFF) WiFi.mode(_usermode);
 }
 
 /**
@@ -196,7 +195,6 @@ bool ThingsCloudWiFiManager::setupHostname(bool restart)
     DEBUG_WM(DEBUG_VERBOSE, F("Setting WiFi hostname"));
 #endif
     res = WiFi.hostname(_hostname.c_str());
-// #ifdef ESP8266MDNS_H
 #ifdef WM_MDNS
 #ifdef WM_DEBUG_LEVEL
     DEBUG_WM(DEBUG_VERBOSE, F("Setting MDNS hostname, tcp 80"));
@@ -215,7 +213,6 @@ bool ThingsCloudWiFiManager::setupHostname(bool restart)
 #endif
 
     res = WiFi.setHostname(_hostname.c_str());
-    // #ifdef ESP32MDNS_H
 #ifdef WM_MDNS
 #ifdef WM_DEBUG_LEVEL
     DEBUG_WM(DEBUG_VERBOSE, F("Setting MDNS hostname, tcp 80"));
@@ -237,7 +234,6 @@ bool ThingsCloudWiFiManager::setupHostname(bool restart)
 #ifdef WM_DEBUG_LEVEL
         DEBUG_WM(DEBUG_VERBOSE, F("reconnecting to set new hostname"));
 #endif
-        // WiFi.reconnect(); // This does not reset dhcp
         WiFi_Disconnect();
         delay(200); // do not remove, need a delay for disconnect to change status()
     }
@@ -372,10 +368,6 @@ boolean ThingsCloudWiFiManager::configPortalHasTimeout()
         return false;
     }
 
-    // handle timeout webclient check
-    if (_webClientCheck && (_webPortalAccessed > _configPortalStart) > 0)
-        _configPortalStart = _webPortalAccessed;
-
     // handle timed out
     if (millis() > _configPortalStart + _configPortalTimeout)
     {
@@ -428,7 +420,7 @@ void ThingsCloudWiFiManager::setupConfigPortal()
     }
     // @todo add a new callback maybe, after webserver started, callback cannot override handlers, but can grab them first
 
-    /* Setup httpd callbacks, web pages: root, wifi config pages, SO captive portal detectors and not found. */
+    // Register the JSON provisioning API and its 404 handler.
 
     server->on(String(FPSTR("/api/wifilist")).c_str(), std::bind(&ThingsCloudWiFiManager::handleWifiList, this));
     server->on(String(FPSTR("/api/wifisave")).c_str(), std::bind(&ThingsCloudWiFiManager::handleWifiSave, this));
@@ -575,7 +567,7 @@ boolean ThingsCloudWiFiManager::process()
             shutdownConfigPortal();
     }
 
-    if (webPortalActive || (configPortalActive && !_configPortalIsBlocking))
+    if (configPortalActive && !_configPortalIsBlocking)
     {
 
         // if timed out or abort, break
@@ -706,9 +698,6 @@ bool ThingsCloudWiFiManager::shutdownConfigPortal()
     DEBUG_WM(DEBUG_VERBOSE, F("shutdownConfigPortal"));
 #endif
 
-    if (webPortalActive)
-        return false;
-
     if (configPortalActive)
     {
         // DNS handler
@@ -778,7 +767,6 @@ uint8_t ThingsCloudWiFiManager::connectWifi(String ssid, String pass, bool conne
     //@todo catch failures in set_config
 
     // make sure sta is on before `begin` so it does not call enablesta->mode while persistent is ON ( which would save WM AP state to eeprom !)
-    // WiFi.setAutoReconnect(false);
     if (_cleanConnect)
         WiFi_Disconnect(); // disconnect before begin, in case anything is hung, this causes a 2 seconds delay for connect
     // @todo find out what status is when this is needed, can we detect it and handle it, say in between states or idle_status
@@ -802,8 +790,6 @@ uint8_t ThingsCloudWiFiManager::connectWifi(String ssid, String pass, bool conne
         {
             wifiConnectNew(ssid, pass, connect);
             // @todo connect=false seems to disconnect sta in begin() so not sure if _connectonsave is useful at all
-            // skip wait if not connecting
-            // if(connect){
             if (_saveTimeout > 0)
             {
                 connRes = waitForConnectResult(_saveTimeout); // use default save timeout for saves to prevent bugs in esp->waitforconnectresult loop
@@ -812,7 +798,6 @@ uint8_t ThingsCloudWiFiManager::connectWifi(String ssid, String pass, bool conne
             {
                 connRes = waitForConnectResult(0);
             }
-            // }
         }
         else
         {
@@ -835,18 +820,6 @@ uint8_t ThingsCloudWiFiManager::connectWifi(String ssid, String pass, bool conne
 #endif
         retry++;
     }
-
-// WPS enabled? https://github.com/esp8266/Arduino/pull/4889
-#ifdef NO_EXTRA_4K_HEAP
-    // do WPS, if WPS options enabled and not connected and no password was supplied
-    // @todo this seems like wrong place for this, is it a fallback or option?
-    if (_tryWPS && connRes != WL_CONNECTED && pass == "")
-    {
-        startWPS();
-        // should be connected at the end of WPS
-        connRes = waitForConnectResult();
-    }
-#endif
 
     if (connRes != WL_SCAN_COMPLETED)
     {
@@ -977,7 +950,6 @@ void ThingsCloudWiFiManager::updateConxResult(uint8_t status)
         }
     }
 #elif defined(ESP32)
-    // if(_lastconxresult == WL_CONNECT_FAILED){
     if (_lastconxresult == WL_CONNECT_FAILED || _lastconxresult == WL_DISCONNECTED)
     {
 #ifdef WM_DEBUG_LEVEL
@@ -986,7 +958,6 @@ void ThingsCloudWiFiManager::updateConxResult(uint8_t status)
         if (_lastconxresulttmp != WL_IDLE_STATUS)
         {
             _lastconxresult = _lastconxresulttmp;
-            // _lastconxresulttmp = WL_IDLE_STATUS;
         }
     }
     DEBUG_WM(DEBUG_DEV, F("lastconxresult:"), getWLStatusString(_lastconxresult));
@@ -1004,7 +975,7 @@ uint8_t ThingsCloudWiFiManager::waitForConnectResult()
 
 /**
  * waitForConnectResult
- * @param  uint16_t timeout  in seconds
+ * @param  uint32_t timeout  in milliseconds
  * @return uint8_t  WL Status
  */
 uint8_t ThingsCloudWiFiManager::waitForConnectResult(uint32_t timeout)
@@ -1050,17 +1021,11 @@ void ThingsCloudWiFiManager::handleWifiList()
     page += getScanItems();
 
     server->send(200, FPSTR(HTTP_HEAD_JSON), page);
-    // server->close(); // testing reliability fix for content length mismatches during mutiple flood hits
 
 #ifdef WM_DEBUG_LEVEL
     DEBUG_WM(DEBUG_DEV, F("Sent config page"));
 #endif
 }
-
-// // is it possible in softap mode to detect aps without scanning
-// bool ThingsCloudWiFiManager::WiFi_scanNetworksForAP(bool force){
-//   WiFi_scanNetworks(force);
-// }
 
 void ThingsCloudWiFiManager::WiFi_scanComplete(int networksFound)
 {
@@ -1077,21 +1042,8 @@ bool ThingsCloudWiFiManager::WiFi_scanNetworks()
     return WiFi_scanNetworks(false, false);
 }
 
-bool ThingsCloudWiFiManager::WiFi_scanNetworks(unsigned int cachetime, bool async)
-{
-    return WiFi_scanNetworks(millis() - _lastscan > cachetime, async);
-}
-bool ThingsCloudWiFiManager::WiFi_scanNetworks(unsigned int cachetime)
-{
-    return WiFi_scanNetworks(millis() - _lastscan > cachetime, false);
-}
 bool ThingsCloudWiFiManager::WiFi_scanNetworks(bool force, bool async)
 {
-#ifdef WM_DEBUG_LEVEL
-// DEBUG_WM(DEBUG_DEV,"scanNetworks async:",async == true);
-// DEBUG_WM(DEBUG_DEV,_numNetworks,(millis()-_lastscan ));
-// DEBUG_WM(DEBUG_DEV,"scanNetworks force:",force == true);
-#endif
     if (_numNetworks == 0)
     {
         DEBUG_WM(DEBUG_DEV, "NO APs found forcing new scan");
@@ -1164,7 +1116,7 @@ bool ThingsCloudWiFiManager::WiFi_scanNetworks(bool force, bool async)
     return false;
 }
 
-String ThingsCloudWiFiManager::ThingsCloudWiFiManager::getScanItems()
+String ThingsCloudWiFiManager::getScanItems()
 {
     String json;
     StaticJsonDocument<1024> jsonObject;
@@ -1246,7 +1198,6 @@ String ThingsCloudWiFiManager::ThingsCloudWiFiManager::getScanItems()
             {
                 if (WiFi.SSID(indices[i]) == "")
                 {
-                    // Serial.println(WiFi.BSSIDstr(indices[i]));
                     continue; // No idea why I am seeing these, lets just skip them for now
                 }
                 StaticJsonDocument<200> doc;
@@ -1318,7 +1269,6 @@ void ThingsCloudWiFiManager::handleWifiSave()
 
     if (server->arg(FPSTR(S_ip)) != "")
     {
-        //_sta_static_ip.fromString(server->arg(FPSTR(S_ip));
         String ip = server->arg(FPSTR(S_ip));
         optionalIPFromString(&_sta_static_ip, ip.c_str());
 #ifdef WM_DEBUG_LEVEL
@@ -1397,9 +1347,6 @@ void ThingsCloudWiFiManager::handleInfo()
                 infoObj["last_err"] = FPSTR(HTTP_STATUS_OFFFAIL);
             }
         }
-    }
-    else
-    {
     }
 
     infoObj["device_key"] = _deviceKey;
@@ -1527,12 +1474,6 @@ void ThingsCloudWiFiManager::handleNotFound()
     server->sendHeader(F("Pragma"), F("no-cache"));
     server->sendHeader(F("Expires"), F("-1"));
     server->send(404, FPSTR(HTTP_HEAD_JSON), json);
-}
-
-void ThingsCloudWiFiManager::stopCaptivePortal()
-{
-    _enableCaptivePortal = false;
-    // @todo maybe disable configportaltimeout(optional), or just provide callback for user
 }
 
 // PUBLIC
@@ -1895,26 +1836,6 @@ void ThingsCloudWiFiManager::setConfigResetCallback(std::function<void()> func)
 }
 
 /**
- * setPreSaveConfigCallback, set a callback to fire before saving wifi or params
- * @access public
- * @param {[type]} void (*func)(void)
- */
-void ThingsCloudWiFiManager::setPreSaveConfigCallback(std::function<void()> func)
-{
-    _presavecallback = func;
-}
-
-/**
- * setPreOtaUpdateCallback, set a callback to fire before OTA update
- * @access public
- * @param {[type]} void (*func)(void)
- */
-void ThingsCloudWiFiManager::setPreOtaUpdateCallback(std::function<void()> func)
-{
-    _preotaupdatecallback = func;
-}
-
-/**
  * toggle wifiscan hiding of duplicate ssid names
  * if this is false, wifiscan will remove duplicat Access Points - defaut true
  * @access public
@@ -1958,35 +1879,6 @@ void ThingsCloudWiFiManager::setRestorePersistent(boolean persistent)
 }
 
 /**
- * toggle showing static ip form fields
- * if enabled, then the static ip, gateway, subnet fields will be visible, even if not set in code
- * @since $dev
- * @access public
- * @param boolean alwaysShow [false]
- */
-void ThingsCloudWiFiManager::setShowStaticFields(boolean alwaysShow)
-{
-    if (_disableIpFields)
-        _staShowStaticFields = alwaysShow ? 1 : -1;
-    else
-        _staShowStaticFields = alwaysShow ? 1 : 0;
-}
-
-/**
- * toggle showing dns fields
- * if enabled, then the dns1 field will be visible, even if not set in code
- * @since $dev
- * @access public
- * @param boolean alwaysShow [false]
- */
-void ThingsCloudWiFiManager::setShowDnsFields(boolean alwaysShow)
-{
-    if (_disableIpFields)
-        _staShowDns = alwaysShow ? 1 : -1;
-    _staShowDns = alwaysShow ? 1 : 0;
-}
-
-/**
  * toggle captive portal
  * if enabled, then devices that use captive portal checks will be redirected to root
  * if not you will automatically have to navigate to ip [192.168.4.1]
@@ -2024,29 +1916,6 @@ void ThingsCloudWiFiManager::setWiFiAutoReconnect(boolean enabled)
 void ThingsCloudWiFiManager::setAPClientCheck(boolean enabled)
 {
     _apClientCheck = enabled;
-}
-
-/**
- * toggle configportal timeout wait for web client
- * if enabled, then the configportal will restart timeout when client requests come in
- * @since $dev
- * @access public
- * @param boolean enabled [true]
- */
-void ThingsCloudWiFiManager::setWebPortalClientCheck(boolean enabled)
-{
-    _webClientCheck = enabled;
-}
-
-/**
- * toggle wifiscan percentages or quality icons
- * @since $dev
- * @access public
- * @param boolean enabled [false]
- */
-void ThingsCloudWiFiManager::setScanDispPerc(boolean enabled)
-{
-    _scanDispOptions = enabled;
 }
 
 /**
@@ -2101,39 +1970,12 @@ void ThingsCloudWiFiManager::setWiFiAPHidden(bool hidden)
 }
 
 /**
- * toggle showing erase wifi config button on info page
- * @param boolean enabled
- */
-void ThingsCloudWiFiManager::setShowInfoErase(boolean enabled)
-{
-    _showInfoErase = enabled;
-}
-
-/**
- * toggle showing update upload web ota button on info page
- * @param boolean enabled
- */
-void ThingsCloudWiFiManager::setShowInfoUpdate(boolean enabled)
-{
-    _showInfoUpdate = enabled;
-}
-
-/**
  * check if the config portal is running
  * @return bool true if active
  */
 bool ThingsCloudWiFiManager::getConfigPortalActive()
 {
     return configPortalActive;
-}
-
-/**
- * [getConfigPortalActive description]
- * @return bool true if active
- */
-bool ThingsCloudWiFiManager::getWebPortalActive()
-{
-    return webPortalActive;
 }
 
 String ThingsCloudWiFiManager::getWiFiHostname()
@@ -2143,15 +1985,6 @@ String ThingsCloudWiFiManager::getWiFiHostname()
 #else
     return (String)WiFi.hostname();
 #endif
-}
-
-/**
- * [setTitle description]
- * @param String title, set app title
- */
-void ThingsCloudWiFiManager::setTitle(String title)
-{
-    _title = title;
 }
 
 // GETTERS
@@ -2229,26 +2062,8 @@ void ThingsCloudWiFiManager::setCountry(String cc)
 }
 
 /**
- * setClass
- * @param String str body class string
- */
-void ThingsCloudWiFiManager::setClass(String str)
-{
-    _bodyClass = str;
-}
-
-/**
- * setDarkMode
- * @param bool enable, enable dark mode via invert class
- */
-void ThingsCloudWiFiManager::setDarkMode(bool enable)
-{
-    _bodyClass = enable ? "invert" : "";
-}
-
-/**
  * setHttpPort
- * @param uint16_t port webserver port number default 80
+ * @param uint16_t port provisioning server port number, default 8080
  */
 void ThingsCloudWiFiManager::setHttpPort(uint16_t port)
 {
@@ -2315,20 +2130,7 @@ void ThingsCloudWiFiManager::DEBUG_WM(wm_debuglevel_t level, Generic text, Gener
 
     if (_debugLevel >= DEBUG_MAX)
     {
-#ifdef ESP8266
-// uint32_t free;
-// uint16_t max;
-// uint8_t frag;
-// ESP.getHeapStats(&free, &max, &frag);// @todo Does not exist in 2.3.0
-// _debugPort.printf("[MEM] free: %5d | max: %5d | frag: %3d%% \n", free, max, frag);
-#elif defined ESP32
-        // total_free_bytes;      ///<  Total free bytes in the heap. Equivalent to multi_free_heap_size().
-        // total_allocated_bytes; ///<  Total bytes allocated to data in the heap.
-        // largest_free_block;    ///<  Size of largest free block in the heap. This is the largest malloc-able size.
-        // minimum_free_bytes;    ///<  Lifetime minimum free heap size. Equivalent to multi_minimum_free_heap_size().
-        // allocated_blocks;      ///<  Number of (variable size) blocks allocated in the heap.
-        // free_blocks;           ///<  Number of (variable size) free blocks in the heap.
-        // total_blocks;          ///<  Total number of (variable size) blocks in the heap.
+#ifdef ESP32
         multi_heap_info_t info;
         heap_caps_get_info(&info, MALLOC_CAP_INTERNAL);
         uint32_t free = info.total_free_bytes;
@@ -2412,15 +2214,6 @@ void ThingsCloudWiFiManager::debugPlatformInfo()
     DEBUG_WM(F("Free heap:       "), ESP.getFreeHeap());
     DEBUG_WM(F("ESP SDK version: "), ESP.getSdkVersion());
 #endif
-// esp_chip_info_t chipInfo;
-// esp_chip_info(&chipInfo);
-#ifdef WM_DEBUG_LEVEL
-// DEBUG_WM("Chip Info: Model: ",chipInfo.model);
-// DEBUG_WM("Chip Info: Cores: ",chipInfo.cores);
-// DEBUG_WM("Chip Info: Rev: ",chipInfo.revision);
-// DEBUG_WM(printf("Chip Info: Model: %d, cores: %d, revision: %d", chipInfo.model.c_str(), chipInfo.cores, chipInfo.revision));
-// DEBUG_WM("Chip Rev: ",(String)ESP.getChipRevision());
-#endif
     // core version is not avail
 #endif
 }
@@ -2442,30 +2235,6 @@ int ThingsCloudWiFiManager::getRSSIasQuality(int RSSI)
         quality = 2 * (RSSI + 100);
     }
     return quality;
-}
-/** Is this an IP? */
-boolean ThingsCloudWiFiManager::isIp(String str)
-{
-    for (size_t i = 0; i < str.length(); i++)
-    {
-        int c = str.charAt(i);
-        if (c != '.' && (c < '0' || c > '9'))
-        {
-            return false;
-        }
-    }
-    return true;
-}
-/** IP to String? */
-String ThingsCloudWiFiManager::toStringIp(IPAddress ip)
-{
-    String res = "";
-    for (int i = 0; i < 3; i++)
-    {
-        res += String((ip >> (8 * i)) & 0xFF) + ".";
-    }
-    res += String(((ip >> 8 * 3)) & 0xFF);
-    return res;
 }
 
 boolean ThingsCloudWiFiManager::validApPassword()
@@ -2501,11 +2270,6 @@ String ThingsCloudWiFiManager::htmlEntities(String str)
     str.replace("&", "&amp;");
     str.replace("<", "&lt;");
     str.replace(">", "&gt;");
-    // str.replace("-","&ndash;");
-    // str.replace("\"","&quot;");
-    // str.replace("/": "&#x2F;");
-    // str.replace("`": "&#x60;");
-    // str.replace("=": "&#x3D;");
     return str;
 }
 /**
@@ -2531,9 +2295,6 @@ String ThingsCloudWiFiManager::getWLStatusString()
 
 String ThingsCloudWiFiManager::encryptionTypeStr(uint8_t authmode)
 {
-#ifdef WM_DEBUG_LEVEL
-// DEBUG_WM("enc_tye: ",authmode);
-#endif
     return AUTH_MODE_NAMES[authmode];
 }
 
@@ -2564,7 +2325,6 @@ bool ThingsCloudWiFiManager::WiFiSetCountry()
 
     // @todo move these definitions, and out of cpp `esp_wifi_set_country(&WM_COUNTRY_US)`
     bool ret = true;
-// ret = esp_wifi_set_bandwidth(WIFI_IF_AP,WIFI_BW_HT20); // WIFI_BW_HT40
 #ifdef ESP32
     esp_err_t err = ESP_OK;
     // @todo check if wifi is init, no idea how, doesnt seem to be exposed atm ( might be now! )
@@ -2596,7 +2356,6 @@ bool ThingsCloudWiFiManager::WiFiSetCountry()
     ret = err == ESP_OK;
 
 #elif defined(ESP8266) && !defined(WM_NOCOUNTRY)
-    // if(WiFi.getMode() == WIFI_OFF); // exception if wifi not init!
     if (_wificountry == "US")
         ret = wifi_set_country((wifi_country_t *)&WM_COUNTRY_US);
     else if (_wificountry == "JP")
@@ -2850,17 +2609,8 @@ void ThingsCloudWiFiManager::WiFiEvent(WiFiEvent_t event, system_event_info_t in
 #endif
     if (!_hasBegun)
     {
-#ifdef WM_DEBUG_LEVEL
-        // DEBUG_WM(DEBUG_VERBOSE,"[ERROR] WiFiEvent, not ready");
-#endif
-        // Serial.println(F("\n[EVENT] WiFiEvent logging (wm debug not available)"));
-        // Serial.print(F("[EVENT] ID: "));
-        // Serial.println(event);
         return;
     }
-#ifdef WM_DEBUG_LEVEL
-// DEBUG_WM(DEBUG_VERBOSE,"[EVENT]",event);
-#endif
     if (event == ARDUINO_EVENT_WIFI_STA_DISCONNECTED)
     {
 #ifdef WM_DEBUG_LEVEL
@@ -2902,14 +2652,12 @@ void ThingsCloudWiFiManager::WiFi_autoReconnect()
 #ifdef ESP8266
     WiFi.setAutoReconnect(_wifiAutoReconnect);
 #elif defined(ESP32)
-    // if(_wifiAutoReconnect){
     // @todo move to seperate method, used for event listener now
 #ifdef WM_DEBUG_LEVEL
     DEBUG_WM(DEBUG_VERBOSE, F("ESP32 event handler enabled"));
 #endif
     using namespace std::placeholders;
     wm_event_id = WiFi.onEvent(std::bind(&ThingsCloudWiFiManager::WiFiEvent, this, _1, _2));
-    // }
 #endif
 }
 

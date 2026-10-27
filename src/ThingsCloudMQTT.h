@@ -6,7 +6,6 @@
 #ifndef ThingsCloud_MQTT_H
 #define ThingsCloud_MQTT_H
 
-// #include <HTTPUpdate.h>
 #include <ArduinoJson.h>
 #include <PubSubClient.h>
 #include <vector>
@@ -49,7 +48,7 @@ class ThingsCloudMQTT
 {
 private:
     // Wifi related
-    bool _handleWiFi;
+    bool _handleWiFi = false;
     bool _wifiConnected;
     bool _connectingToWifi;
     unsigned long _lastWifiConnectiomAttemptMillis;
@@ -68,7 +67,7 @@ private:
     const char *_mqttHost;
     String _accessToken;
     const char *_projectKey;
-    const char *_apiEndpoint;
+    const char *_apiEndpoint = nullptr;
     String _deviceKey;
     String _typeKey;
     String _customerId;
@@ -107,9 +106,6 @@ private:
     ConnectionStatusCallback _onMQTTDisconnect;
     ConnectionStatusCallback _onWifiConnect;
     ConnectionStatusCallback _onWifiDisconnect;
-    bool _enableMQTTDisconnectCallback = false;
-    bool _enableWifiConnectCallback = false;
-    bool _enableWifiDisconnectCallback = false;
     bool _enableSerialLogs;
     bool _drasticResetOnConnectionFailures;
     unsigned int _connectionEstablishedCount; // Incremented before each _onMQTTConnect call
@@ -156,6 +152,7 @@ public:
     bool onCommandSend(MessageReceivedCallbackWithTopic messageReceivedCallbackWithTopic);
     bool onCommandSend(MessageReceivedCallbackJSONWithTopic messageReceivedCallbackWithTopic);
 
+    // Includes MQTT headers and topic. Preserved across reconnects; defaults to 1024.
     bool setMaxPacketSize(const uint16_t size);
     bool publish(const String &topic, const String &payload, bool retain = false);
     bool publish(const String &topic, const uint8_t *payload, unsigned int plength);
@@ -202,6 +199,7 @@ private:
     void connectToWifi();
     bool connectToMqttBroker();
     void processDelayedExecutionRequests();
+    bool subscribeRecord(const TopicSubscriptionRecord &record, uint8_t qos);
     bool mqttTopicMatch(const String &topic1, const String &topic2);
     void mqttMessageReceivedCallback(char *topic, uint8_t *payload, unsigned int length);
     String getEspChipUniqueId();

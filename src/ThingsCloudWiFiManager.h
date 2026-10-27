@@ -14,28 +14,19 @@
 #include <core_version.h>
 #endif
 
-#include <vector>
-
 // #define WM_MDNS            // includes MDNS, also set MDNS with sethostname
 // #define WM_FIXERASECONFIG  // use erase flash fix
 // #define WM_ERASE_NVS       // esp32 erase(true) will erase NVS
-// #define WM_RTC             // esp32 info page will include reset reasons
 
 #ifdef ARDUINO_ESP8266_RELEASE_2_3_0
 #warning "ARDUINO_ESP8266_RELEASE_2_3_0, some WM features disabled"
 // @todo check failing on platform = espressif8266@1.7.3
 #define WM_NOASYNC      // esp8266 no async scan wifi
 #define WM_NOCOUNTRY    // esp8266 no country
-#define WM_NOAUTH       // no httpauth
-#define WM_NOSOFTAPSSID // no softapssid() @todo shim
 #endif
-
-// #include "soc/efuse_reg.h" // include to add efuse chip rev to info, getChipRevision() is almost always the same though, so not sure why it matters.
 
 // #define esp32autoreconnect    // implement esp32 autoreconnect event listener kludge, @DEPRECATED
 // autoreconnect is WORKING https://github.com/espressif/arduino-esp32/issues/653#issuecomment-405604766
-
-#define WM_WEBSERVERSHIM // use webserver shim lib
 
 #ifdef ESP8266
 
@@ -58,31 +49,8 @@ extern "C"
 
 #elif defined(ESP32)
 
-// #define STRING2(x) #x
-// #define STRING(x) STRING2(x)
-
-// // #include <esp_idf_version.h>
-// #ifdef ESP_IDF_VERSION
-//     #pragma message "ESP_IDF_VERSION_MAJOR = " STRING(ESP_IDF_VERSION_MAJOR)
-//     #pragma message "ESP_IDF_VERSION_MINOR = " STRING(ESP_IDF_VERSION_MINOR)
-//     #pragma message "ESP_IDF_VERSION_PATCH = " STRING(ESP_IDF_VERSION_PATCH)
-// #endif
-
-// // #include "esp_arduino_version.h"
-// #ifdef ESP_ARDUINO_VERSION
-//     #pragma message "ESP_ARDUINO_VERSION_MAJOR = " STRING(ESP_ARDUINO_VERSION_MAJOR)
-//     #pragma message "ESP_ARDUINO_VERSION_MINOR = " STRING(ESP_ARDUINO_VERSION_MINOR)
-//     #pragma message "ESP_ARDUINO_VERSION_PATCH = " STRING(ESP_ARDUINO_VERSION_PATCH)
-// #else
-//     #include <core_version.h>
-//     #pragma message "ESP_ARDUINO_VERSION_GIT  = " STRING(ARDUINO_ESP32_GIT_VER)//  0x46d5afb1
-//     #pragma message "ESP_ARDUINO_VERSION_DESC = " STRING(ARDUINO_ESP32_GIT_DESC) //  1.0.6
-//     // #pragma message "ESP_ARDUINO_VERSION_REL  = " STRING(ARDUINO_ESP32_RELEASE) //"1_0_6"
-// #endif
-
 #include <WiFi.h>
 #include <esp_wifi.h>
-#include <Update.h>
 
 #ifndef ESP_getChipId
 #define ESP_getChipId() (uint64_t) ESP.getEfuseMac()
@@ -91,13 +59,7 @@ extern "C"
 #define WM_WIFIOPEN WIFI_AUTH_OPEN
 
 #ifndef WEBSERVER_H
-#ifdef WM_WEBSERVERSHIM
 #include <WebServer.h>
-#else
-#include <ESP8266WebServer.h>
-// Forthcoming official ? probably never happening
-// https://github.com/esp8266/ESPWebServer
-#endif
 #endif
 
 #ifdef WM_ERASE_NVS
@@ -109,11 +71,6 @@ extern "C"
 #include <ESPmDNS.h>
 #endif
 
-#ifdef WM_RTC
-#include <rom/rtc.h>
-#endif
-
-#else
 #endif
 
 #include <DNSServer.h>
@@ -123,7 +80,7 @@ const char HTTP_STATUS_OFFPW[] PROGMEM = "Authentication Failure"; // STATION_WR
 const char HTTP_STATUS_OFFNOAP[] PROGMEM = "AP not found";         // WL_NO_SSID_AVAIL
 const char HTTP_STATUS_OFFFAIL[] PROGMEM = "Could not Connect";    // WL_CONNECT_FAILED
 
-// Info html
+// Provisioning diagnostics
 #ifdef ESP32
 const char HTTP_INFO_esphead[] PROGMEM = "esp32";
 #else
@@ -187,23 +144,10 @@ const char *const WIFI_MODES[] PROGMEM = {"NULL", "STA", "AP", "STA+AP"};
 
 #ifdef ESP32
 // as 2.5.2
-// typedef struct {
-//     char                  cc[3];   /**< country code string */
-//     uint8_t               schan;   /**< start channel */
-//     uint8_t               nchan;   /**< total channel number */
-//     int8_t                max_tx_power;   /**< This field is used for getting WiFi maximum transmitting power, call esp_wifi_set_max_tx_power to set the maximum transmitting power. */
-//     wifi_country_policy_t policy;  /**< country policy */
-// } wifi_country_t;
 const wifi_country_t WM_COUNTRY_US{"US", 1, 11, CONFIG_ESP32_PHY_MAX_WIFI_TX_POWER, WIFI_COUNTRY_POLICY_AUTO};
 const wifi_country_t WM_COUNTRY_CN{"CN", 1, 13, CONFIG_ESP32_PHY_MAX_WIFI_TX_POWER, WIFI_COUNTRY_POLICY_AUTO};
 const wifi_country_t WM_COUNTRY_JP{"JP", 1, 14, CONFIG_ESP32_PHY_MAX_WIFI_TX_POWER, WIFI_COUNTRY_POLICY_AUTO};
 #elif defined(ESP8266) && !defined(WM_NOCOUNTRY)
-// typedef struct {
-//     char cc[3];               /**< country code string */
-//     uint8_t schan;            /**< start channel */
-//     uint8_t nchan;            /**< total channel number */
-//     uint8_t policy;           /**< country policy */
-// } wifi_country_t;
 const wifi_country_t WM_COUNTRY_US{"US", 1, 11, WIFI_COUNTRY_POLICY_AUTO};
 const wifi_country_t WM_COUNTRY_CN{"CN", 1, 13, WIFI_COUNTRY_POLICY_AUTO};
 const wifi_country_t WM_COUNTRY_JP{"JP", 1, 14, WIFI_COUNTRY_POLICY_AUTO};
@@ -266,15 +210,9 @@ public:
     // called when wifi settings have been changed and connection was successful ( or setBreakAfterConfig(true) )
     void setSaveConfigCallback(std::function<void()> func);
 
-    // called when saving params-in-wifi or params before anything else happens (eg wifi)
-    void setPreSaveConfigCallback(std::function<void()> func);
-
-    // called just before doing OTA update
-    void setPreOtaUpdateCallback(std::function<void()> func);
-
     // sets timeout before AP,webserver loop ends and exits even if there has been no setup.
     // useful for devices that failed to connect at some point and got stuck in a webserver loop
-    // in seconds setConfigPortalTimeout is a new name for setTimeout, ! not used if setConfigPortalBlocking
+    // in seconds; applies to both blocking and non-blocking config portals
     void setConfigPortalTimeout(unsigned long seconds);
     void setTimeout(unsigned long seconds); // @deprecated, alias
 
@@ -287,7 +225,7 @@ public:
     // sets timeout for which to attempt connecting on saves, useful if there are bugs in esp waitforconnectloop
     void setSaveConnectTimeout(unsigned long seconds);
 
-    // lets you disable automatically connecting after save from webportal
+    // lets you disable automatically connecting after provisioning credentials are saved
     void setSaveConnect(bool connect = true);
 
     // toggle debug output
@@ -311,11 +249,8 @@ public:
 
     // if this is set, portal will be blocking and wait until save or exit,
     // is false user must manually `process()` to handle config portal,
-    // setConfigPortalTimeout is ignored in this mode, user is responsible for closing configportal
+    // process() also checks the configured timeout in non-blocking mode
     void setConfigPortalBlocking(boolean shouldBlock);
-
-    // if this is set, customise style
-    void setCustomHeadElement(const char *element);
 
     // if this is true, remove duplicated Access Points - defaut true
     void setRemoveDuplicateAPs(boolean removeDuplicates);
@@ -323,29 +258,14 @@ public:
     // setter for ESP wifi.persistent so we can remember it and restore user preference, as WIFi._persistent is protected
     void setRestorePersistent(boolean persistent);
 
-    // if true, always show static net inputs, IP, subnet, gateway, else only show if set via setSTAStaticIPConfig
-    void setShowStaticFields(boolean alwaysShow);
-
-    // if true, always show static dns, esle only show if set via setSTAStaticIPConfig
-    void setShowDnsFields(boolean alwaysShow);
-
-    // toggle showing the saved wifi password in wifi form, could be a security issue.
-    void setShowPassword(boolean show);
-
     // if false, disable captive portal redirection
     void setCaptivePortalEnable(boolean enabled);
 
     // if false, timeout captive portal even if a STA client connected to softAP (false), suggest disabling if captiveportal is open
     void setAPClientCheck(boolean enabled);
 
-    // if true, reset timeout when webclient connects (true), suggest disabling if captiveportal is open
-    void setWebPortalClientCheck(boolean enabled);
-
     // if true, enable autoreconnecting
     void setWiFiAutoReconnect(boolean enabled);
-
-    // if true, wifiscan will show percentage instead of quality icons, until we have better templating
-    void setScanDispPerc(boolean enabled);
 
     // if true (default) then start the config portal from autoConnect if connection failed
     void setEnableConfigPortal(boolean enable);
@@ -353,12 +273,6 @@ public:
     // set a custom hostname, sets sta and ap dhcp client id for esp32, and sta for esp8266
     bool setHostname(const char *hostname);
     bool setHostname(String hostname);
-
-    // show erase wifi onfig button on info page, true
-    void setShowInfoErase(boolean enabled);
-
-    // show OTA upload button on info page
-    void setShowInfoUpdate(boolean enabled);
 
     // set ap channel
     void setWiFiAPChannel(int32_t channel);
@@ -368,12 +282,6 @@ public:
 
     // clean connect, always disconnect before connecting
     void setCleanConnect(bool enable); // default false
-
-    // set the webapp title, default ThingsCloudWiFiManager
-    void setTitle(String title);
-
-    // add params to its own menu page and remove from wifi, NOT TO BE COMBINED WITH setMenu!
-    void setParamsPage(bool enable);
 
     // get last connection result, includes autoconnect and wifisave
     uint8_t getLastConxResult();
@@ -406,26 +314,17 @@ public:
     // set the country code for wifi settings, CN
     void setCountry(String cc);
 
-    // set body class (invert), may be used for hacking in alt classes
-    void setClass(String str);
-
-    // set dark mode via invert class
-    void setDarkMode(bool enable);
-
     // get default ap esp uses , esp_chipid etc
     String getDefaultAPName();
 
     // get esp chip unique id
     String getEspChipUniqueId();
 
-    // set port of webserver, 80
+    // set port of provisioning server, defaults to 8080
     void setHttpPort(uint16_t port);
 
     // check if config portal is active (true)
     bool getConfigPortalActive();
-
-    // check if web portal is active (true)
-    bool getWebPortalActive();
 
     // to preload autoconnect for test fixtures or other uses that skip esp sta config
     bool preloadWiFi(String ssid, String pass);
@@ -435,7 +334,7 @@ public:
 
     std::unique_ptr<DNSServer> dnsServer;
 
-#if defined(ESP32) && defined(WM_WEBSERVERSHIM)
+#ifdef ESP32
     using WM_WebServer = WebServer;
 #else
     using WM_WebServer = ESP8266WebServer;
@@ -444,11 +343,6 @@ public:
     std::unique_ptr<WM_WebServer> server;
 
 private:
-    std::vector<uint8_t> _menuIds;
-    std::vector<const char *> _menuIdsParams = {"wifi", "param", "info", "exit"};
-    std::vector<const char *> _menuIdsUpdate = {"wifi", "param", "info", "update", "exit"};
-    std::vector<const char *> _menuIdsDefault = {"wifi", "info", "exit", "sep", "update"};
-
     // ip configs @todo struct ?
     IPAddress _ap_static_ip;
     IPAddress _ap_static_gw;
@@ -460,7 +354,6 @@ private:
 
     // defaults
     const byte DNS_PORT = 53;
-    const byte HTTP_PORT = 80;
     String _apName = "";
     String _apPassword = "";
     String _ssid = "";
@@ -472,11 +365,10 @@ private:
     ThingsCloudMQTT *_mqttClient = NULL;
 
     // options flags
-    unsigned long _configPortalTimeout = 0;   // ms close config portal loop if set (depending on  _cp/webClientCheck options)
+    unsigned long _configPortalTimeout = 0;   // ms before the AP config portal times out
     unsigned long _connectTimeout = 0;        // ms stop trying to connect to ap if set
     unsigned long _saveTimeout = 0;           // ms stop trying to connect to ap on saves, in case bugs in esp waitforconnectresult
     unsigned long _configPortalStart = 0;     // ms config portal start time (updated for timeouts)
-    unsigned long _webPortalAccessed = 0;     // ms last web access time
     WiFiMode_t _usermode = WIFI_STA;          // Default user mode
     String _wifissidprefix = "esp32";         // auto apname prefix prefix+chipid
     uint8_t _lastconxresult = WL_IDLE_STATUS; // store last result when doing connect operations
@@ -492,7 +384,6 @@ private:
     int32_t _apChannel = 0;                   // channel to use for ap
     bool _apHidden = false;                   // store softap hidden value
     uint16_t _httpPort = 8080;                // port for webserver
-    // uint8_t       _retryCount             = 0; // counter for retries, probably not needed if synchronous
     uint8_t _connectRetries = 1;   // number of sta connect retries, force reconnect, wait loop (connectimeout) does not always work and first disconnect bails
     unsigned long _startconn = 0;  // ms for timing wifi connects
     bool _aggresiveReconn = false; // use an agrressive reconnect strategy, WILL delay conxs
@@ -510,44 +401,19 @@ private:
 
     // parameter options
     int _minimumQuality = -1;                // filter wifiscan ap by this rssi
-    int _staShowStaticFields = 0;            // ternary 1=always show static ip fields, 0=only if set, -1=never(cannot change ips via web!)
-    int _staShowDns = 0;                     // ternary 1=always show dns, 0=only if set, -1=never(cannot change dns via web!)
     boolean _removeDuplicateAPs = true;      // remove dup aps from wifiscan
-    boolean _showPassword = false;           // show or hide saved password on wifi form, might be a security issue!
     boolean _shouldBreakAfterConfig = false; // stop configportal on save failure
     boolean _configPortalIsBlocking = true;  // configportal enters blocking loop
     boolean _enableCaptivePortal = false;    // enable captive portal redirection
     boolean _userpersistent = true;          // users preffered persistence to restore
     boolean _wifiAutoReconnect = true;       // there is no platform getter for this, we must assume its true and make it so
     boolean _apClientCheck = false;          // keep cp alive if ap have station
-    boolean _webClientCheck = true;          // keep cp alive if web have client
-    boolean _scanDispOptions = false;        // show percentage in scans not icons
-    boolean _paramsInWifi = true;            // show custom parameters on wifi page
-    boolean _showInfoErase = true;           // info page erase button
-    boolean _showInfoUpdate = true;          // info page update button
-    boolean _showBack = false;               // show back button
     boolean _enableConfigPortal = true;      // use config portal if autoconnect failed
     String _hostname = "";                   // hostname for esp8266 for dhcp, and or MDNS
 
-    String _bodyClass = ""; // class to add to body
-    String _title = "";     // app title -  default ThingsCloudWiFiManager
-
-    // internal options
-
-    // wifiscan notes
-    // The following are background wifi scanning optimizations
-    // experimental to make scans faster, preload scans after starting cp, and visiting home page, so when you click wifi its already has your list
-    // ideally we would add async and xhr here but I am holding off on js requirements atm
-    // might be slightly buggy since captive portals hammer the home page, @todo workaround this somehow.
-    // cache time helps throttle this
-    // async enables asyncronous scans, so they do not block anything
-    // the refresh button bypasses cache
-    // no aps found is problematic as scans are always going to want to run, leading to page load delays
+    // Optional scan optimizations; runtime caching and refresh are handled by WiFi_scanNetworks().
     boolean _preloadwifiscan = false;    // preload wifiscan if true
     boolean _asyncScan = false;          // perform wifi network scan async
-    unsigned int _scancachetime = 30000; // ms cache time for background scans
-
-    boolean _disableIpFields = false; // modify function of setShow_X_Fields(false), forces ip fields off instead of default show if set, eg. _staShowStaticFields=-1
 
     String _wificountry = ""; // country code, @todo define in strings lang
 
@@ -560,11 +426,6 @@ private:
     void setupConfigPortal();
     bool shutdownConfigPortal();
     bool setupHostname(bool restart);
-
-#ifdef NO_EXTRA_4K_HEAP
-    boolean _tryWPS = false; // try WPS on save failure, unsupported
-    void startWPS();
-#endif
 
     bool startAP();
     void setupDNSD();
@@ -588,7 +449,6 @@ private:
 
     boolean configPortalHasTimeout();
     uint8_t processConfigPortal();
-    void stopCaptivePortal();
 
     // wifi platform abstractions
     bool WiFi_Mode(WiFiMode_t m);
@@ -604,8 +464,6 @@ private:
     String WiFi_psk(bool persistent = true) const;
     bool WiFi_scanNetworks();
     bool WiFi_scanNetworks(bool force, bool async);
-    bool WiFi_scanNetworks(unsigned int cachetime, bool async);
-    bool WiFi_scanNetworks(unsigned int cachetime);
     void WiFi_scanComplete(int networksFound);
     bool WiFiSetCountry();
 
@@ -618,8 +476,6 @@ private:
 
 #ifdef WM_ARDUINOVERCHECK
 #define WM_ARDUINOEVENTS
-#else
-#define WM_NOSOFTAPSSID
 #endif
 
 #endif
@@ -632,18 +488,13 @@ private:
 #endif
 
     String getScanItems();
-    // helpers
-    boolean isIp(String str);
-    String toStringIp(IPAddress ip);
     boolean validApPassword();
     String encryptionTypeStr(uint8_t authmode);
 
     // flags
     boolean connect;
     boolean abort;
-    boolean reset = false;
     boolean configPortalActive = false;
-    boolean webPortalActive = false;
     boolean portalTimeoutResult = false;
     boolean portalAbortResult = false;
     boolean storeSTAmode = true; // option store persistent STA mode in connectwifi
@@ -705,10 +556,7 @@ private:
     std::function<void(ThingsCloudWiFiManager *)> _apcallback;
     std::function<void()> _webservercallback;
     std::function<void()> _savewificallback;
-    std::function<void()> _presavecallback;
-    std::function<void()> _saveparamscallback;
     std::function<void()> _resetcallback;
-    std::function<void()> _preotaupdatecallback;
 
     template <class T>
     auto optionalIPFromString(T *obj, const char *s) -> decltype(obj->fromString(s))
@@ -725,100 +573,3 @@ private:
 #endif
 
 #endif
-
-/*
-* ESP32 WiFi Events
-
-0  SYSTEM_EVENT_WIFI_READY               < ESP32 WiFi ready
-1  SYSTEM_EVENT_SCAN_DONE                < ESP32 finish scanning AP
-2  SYSTEM_EVENT_STA_START                < ESP32 station start
-3  SYSTEM_EVENT_STA_STOP                 < ESP32 station stop
-4  SYSTEM_EVENT_STA_CONNECTED            < ESP32 station connected to AP
-5  SYSTEM_EVENT_STA_DISCONNECTED         < ESP32 station disconnected from AP
-6  SYSTEM_EVENT_STA_AUTHMODE_CHANGE      < the auth mode of AP connected by ESP32 station changed
-7  SYSTEM_EVENT_STA_GOT_IP               < ESP32 station got IP from connected AP
-8  SYSTEM_EVENT_STA_LOST_IP              < ESP32 station lost IP and the IP is reset to 0
-9  SYSTEM_EVENT_STA_WPS_ER_SUCCESS       < ESP32 station wps succeeds in enrollee mode
-10 SYSTEM_EVENT_STA_WPS_ER_FAILED        < ESP32 station wps fails in enrollee mode
-11 SYSTEM_EVENT_STA_WPS_ER_TIMEOUT       < ESP32 station wps timeout in enrollee mode
-12 SYSTEM_EVENT_STA_WPS_ER_PIN           < ESP32 station wps pin code in enrollee mode
-13 SYSTEM_EVENT_AP_START                 < ESP32 soft-AP start
-14 SYSTEM_EVENT_AP_STOP                  < ESP32 soft-AP stop
-15 SYSTEM_EVENT_AP_STACONNECTED          < a station connected to ESP32 soft-AP
-16 SYSTEM_EVENT_AP_STADISCONNECTED       < a station disconnected from ESP32 soft-AP
-17 SYSTEM_EVENT_AP_STAIPASSIGNED         < ESP32 soft-AP assign an IP to a connected station
-18 SYSTEM_EVENT_AP_PROBEREQRECVED        < Receive probe request packet in soft-AP interface
-19 SYSTEM_EVENT_GOT_IP6                  < ESP32 station or ap or ethernet interface v6IP addr is preferred
-20 SYSTEM_EVENT_ETH_START                < ESP32 ethernet start
-21 SYSTEM_EVENT_ETH_STOP                 < ESP32 ethernet stop
-22 SYSTEM_EVENT_ETH_CONNECTED            < ESP32 ethernet phy link up
-23 SYSTEM_EVENT_ETH_DISCONNECTED         < ESP32 ethernet phy link down
-24 SYSTEM_EVENT_ETH_GOT_IP               < ESP32 ethernet got IP from connected AP
-25 SYSTEM_EVENT_MAX
-
-
-typedef enum {
-    ARDUINO_EVENT_WIFI_READY = 0,
-    ARDUINO_EVENT_WIFI_SCAN_DONE,
-    ARDUINO_EVENT_WIFI_STA_START,
-    ARDUINO_EVENT_WIFI_STA_STOP,
-    ARDUINO_EVENT_WIFI_STA_CONNECTED,
-    ARDUINO_EVENT_WIFI_STA_DISCONNECTED,
-    ARDUINO_EVENT_WIFI_STA_AUTHMODE_CHANGE,
-    ARDUINO_EVENT_WIFI_STA_GOT_IP,
-    ARDUINO_EVENT_WIFI_STA_GOT_IP6,
-    ARDUINO_EVENT_WIFI_STA_LOST_IP,
-    ARDUINO_EVENT_WIFI_AP_START,
-    ARDUINO_EVENT_WIFI_AP_STOP,
-    ARDUINO_EVENT_WIFI_AP_STACONNECTED,
-    ARDUINO_EVENT_WIFI_AP_STADISCONNECTED,
-    ARDUINO_EVENT_WIFI_AP_STAIPASSIGNED,
-    ARDUINO_EVENT_WIFI_AP_PROBEREQRECVED,
-    ARDUINO_EVENT_WIFI_AP_GOT_IP6,
-    ARDUINO_EVENT_WIFI_FTM_REPORT,
-    ARDUINO_EVENT_ETH_START,
-    ARDUINO_EVENT_ETH_STOP,
-    ARDUINO_EVENT_ETH_CONNECTED,
-    ARDUINO_EVENT_ETH_DISCONNECTED,
-    ARDUINO_EVENT_ETH_GOT_IP,
-    ARDUINO_EVENT_ETH_GOT_IP6,
-    ARDUINO_EVENT_WPS_ER_SUCCESS,
-    ARDUINO_EVENT_WPS_ER_FAILED,
-    ARDUINO_EVENT_WPS_ER_TIMEOUT,
-    ARDUINO_EVENT_WPS_ER_PIN,
-    ARDUINO_EVENT_WPS_ER_PBC_OVERLAP,
-    ARDUINO_EVENT_SC_SCAN_DONE,
-    ARDUINO_EVENT_SC_FOUND_CHANNEL,
-    ARDUINO_EVENT_SC_GOT_SSID_PSWD,
-    ARDUINO_EVENT_SC_SEND_ACK_DONE,
-    ARDUINO_EVENT_PROV_INIT,
-    ARDUINO_EVENT_PROV_DEINIT,
-    ARDUINO_EVENT_PROV_START,
-    ARDUINO_EVENT_PROV_END,
-    ARDUINO_EVENT_PROV_CRED_RECV,
-    ARDUINO_EVENT_PROV_CRED_FAIL,
-    ARDUINO_EVENT_PROV_CRED_SUCCESS,
-    ARDUINO_EVENT_MAX
-} arduino_event_id_t;
-
-typedef union {
-    wifi_event_sta_scan_done_t wifi_scan_done;
-    wifi_event_sta_authmode_change_t wifi_sta_authmode_change;
-    wifi_event_sta_connected_t wifi_sta_connected;
-    wifi_event_sta_disconnected_t wifi_sta_disconnected;
-    wifi_event_sta_wps_er_pin_t wps_er_pin;
-    wifi_event_sta_wps_fail_reason_t wps_fail_reason;
-    wifi_event_ap_probe_req_rx_t wifi_ap_probereqrecved;
-    wifi_event_ap_staconnected_t wifi_ap_staconnected;
-    wifi_event_ap_stadisconnected_t wifi_ap_stadisconnected;
-    wifi_event_ftm_report_t wifi_ftm_report;
-    ip_event_ap_staipassigned_t wifi_ap_staipassigned;
-    ip_event_got_ip_t got_ip;
-    ip_event_got_ip6_t got_ip6;
-    smartconfig_event_got_ssid_pswd_t sc_got_ssid_pswd;
-    esp_eth_handle_t eth_connected;
-    wifi_sta_config_t prov_cred_recv;
-    wifi_prov_sta_fail_reason_t prov_fail_reason;
-} arduino_event_info_t;
-
-*/

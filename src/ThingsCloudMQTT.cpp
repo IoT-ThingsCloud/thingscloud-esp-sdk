@@ -67,6 +67,7 @@ void ThingsCloudMQTT::initState()
     _mqttLastWillMessage = 0;
     _mqttLastWillRetain = false;
     _mqttCleanSession = true;
+    _mqttClient.setBufferSize(1024);
     _mqttClient.setCallback([this](char *topic, uint8_t *payload, unsigned int length)
                             { this->mqttMessageReceivedCallback(topic, payload, length); });
     _failedMQTTConnectionAttemptCount = 0;
@@ -86,15 +87,23 @@ void ThingsCloudMQTT::enableDebuggingMessages(const bool enabled)
 
 bool ThingsCloudMQTT::fetchDeviceAccessToken()
 {
+    if (_apiEndpoint == nullptr || _apiEndpoint[0] == '\0')
+        return false;
+
     HTTPClient http;
     if (_enableSerialLogs)
         Serial.println("Request device AccessToken by DeviceKey " + _deviceKey);
     String serverPath = String(_apiEndpoint) + "/device/v1/certificate";
 #ifdef ESP32
-    http.begin(serverPath.c_str());
+    bool started = http.begin(serverPath.c_str());
 #else
-    http.begin(_wifiClient, serverPath.c_str());
+    bool started = http.begin(_wifiClient, serverPath.c_str());
 #endif
+    if (!started)
+    {
+        http.end();
+        return false;
+    }
     http.addHeader("Content-Type", "application/json");
     http.addHeader("Project-Key", _projectKey);
     StaticJsonDocument<1024> postObject;
@@ -108,45 +117,47 @@ bool ThingsCloudMQTT::fetchDeviceAccessToken()
         postObject["customer_id"] = _customerId;
     }
     String postData;
+    if (postObject.overflowed())
+    {
+        http.end();
+        return false;
+    }
     serializeJson(postObject, postData);
 
     int httpResponseCode = http.POST(postData);
-    if (httpResponseCode > 0)
-    {
-        StaticJsonDocument<256> doc;
-        DeserializationError error = deserializeJson(doc, http.getString().c_str());
-        if (error)
-        {
-            if (_enableSerialLogs)
-                Serial.println("AccessToken parse failed");
-            return false;
-        }
-        int result = doc["result"];
-        const char *message = doc["message"];
-        JsonObject device = doc["device"];
-        const char *deviceId = device["id"];
-        const char *deviceName = device["name"];
-        const char *deviceAccessToken = device["access_token"];
-        if (result == 1)
-        {
-            _accessToken = String(deviceAccessToken);
-            if (_enableSerialLogs)
-                Serial.println("AccessToken granted -> " + _accessToken);
-        }
-        else
-        {
-            http.end();
-            if (_enableSerialLogs)
-                Serial.printf("AccessToken refused message: %s\n", message);
-            return false;
-        }
-    }
-    else
+    if (httpResponseCode < 200 || httpResponseCode >= 300)
     {
         if (_enableSerialLogs)
-            Serial.println("Error code: " + httpResponseCode);
+            Serial.printf("AccessToken request failed, HTTP code: %d\n", httpResponseCode);
+        http.end();
+        return false;
     }
+
+    String response = http.getString();
     http.end();
+    // Ignore unrelated device metadata when allocating the certificate document.
+    StaticJsonDocument<128> filter;
+    filter["result"] = true;
+    filter["device"]["access_token"] = true;
+    DynamicJsonDocument doc(response.length() + JSON_OBJECT_SIZE(2) + JSON_OBJECT_SIZE(1) + 1);
+    DeserializationError error = deserializeJson(doc, response, DeserializationOption::Filter(filter));
+    if (error || !doc["result"].is<int>() || doc["result"].as<int>() != 1 ||
+        !doc["device"]["access_token"].is<const char *>())
+    {
+        if (_enableSerialLogs)
+            Serial.println("AccessToken response is invalid or refused");
+        return false;
+    }
+
+    const char *deviceAccessToken = doc["device"]["access_token"];
+    if (deviceAccessToken[0] == '\0')
+        return false;
+    String accessToken(deviceAccessToken);
+    if (accessToken.length() != strlen(deviceAccessToken))
+        return false;
+    _accessToken = accessToken;
+    if (_enableSerialLogs)
+        Serial.println("AccessToken granted");
     return true;
 }
 
@@ -212,12 +223,14 @@ bool ThingsCloudMQTT::handleWiFi()
 
     // Get the current connextion status
     bool isWifiConnected = (WiFi.status() == WL_CONNECTED);
+    bool stateChanged = isWifiConnected != _wifiConnected;
 
     /***** Detect ans handle the current WiFi handling state *****/
 
     // Connection established
     if (isWifiConnected && !_wifiConnected)
     {
+        _wifiConnected = true;
         onWiFiConnectionEstablished();
         _connectingToWifi = false;
 
@@ -246,6 +259,7 @@ bool ThingsCloudMQTT::handleWiFi()
     // Connection lost
     else if (!isWifiConnected && _wifiConnected)
     {
+        _wifiConnected = false;
         onWiFiConnectionLost();
 
         if (_handleWiFi)
@@ -269,13 +283,7 @@ bool ThingsCloudMQTT::handleWiFi()
 
     /**** Detect and return if there was a change in the WiFi state ****/
 
-    if (isWifiConnected != _wifiConnected)
-    {
-        _wifiConnected = isWifiConnected;
-        return true;
-    }
-    else
-        return false;
+    return stateChanged;
 }
 
 bool ThingsCloudMQTT::handleMQTT()
@@ -298,6 +306,7 @@ bool ThingsCloudMQTT::handleMQTT()
     // Connection lost
     else if (!isMqttConnected && _mqttConnected)
     {
+        _mqttConnected = false;
         onMQTTConnectionLost();
         _nextMqttConnectionAttemptMillis = millis() + _mqttReconnectionAttemptDelay;
     }
@@ -363,7 +372,7 @@ void ThingsCloudMQTT::onWiFiConnectionEstablished()
     if (_enableSerialLogs)
         Serial.printf("WiFi: Connected (%fs), ip : %s \n", millis() / 1000.0, WiFi.localIP().toString().c_str());
 
-    if (_enableWifiConnectCallback)
+    if (_onWifiConnect)
     {
         _onWifiConnect();
     }
@@ -380,7 +389,15 @@ void ThingsCloudMQTT::onWiFiConnectionLost()
         WiFi.disconnect(true);
     }
 
-    if (_enableWifiDisconnectCallback)
+    // loop() skips MQTT processing while WiFi is down, so report this loss here.
+    if (_mqttConnected)
+    {
+        _mqttConnected = false;
+        _mqttClient.disconnect();
+        onMQTTConnectionLost();
+    }
+
+    if (_onWifiDisconnect)
     {
         _onWifiDisconnect();
     }
@@ -389,7 +406,8 @@ void ThingsCloudMQTT::onWiFiConnectionLost()
 void ThingsCloudMQTT::onMQTTConnectionEstablished()
 {
     _connectionEstablishedCount++;
-    _onMQTTConnect();
+    if (_onMQTTConnect)
+        _onMQTTConnect();
 }
 
 void ThingsCloudMQTT::onMQTTConnectionLost()
@@ -400,7 +418,7 @@ void ThingsCloudMQTT::onMQTTConnectionLost()
         Serial.printf("MQTT: Retrying to connect in %i seconds. \n", _mqttReconnectionAttemptDelay / 1000);
     }
 
-    if (_enableMQTTDisconnectCallback)
+    if (_onMQTTDisconnect)
     {
         _onMQTTDisconnect();
     }
@@ -529,6 +547,12 @@ bool ThingsCloudMQTT::publish(const String &topic, const uint8_t *payload, unsig
 
 bool ThingsCloudMQTT::subscribe(const String &topic, MessageReceivedCallback messageReceivedCallback, uint8_t qos)
 {
+    return subscribeRecord({topic, messageReceivedCallback, nullptr, nullptr, nullptr}, qos);
+}
+
+bool ThingsCloudMQTT::subscribeRecord(const TopicSubscriptionRecord &record, uint8_t qos)
+{
+    const String &topic = record.topic;
     // Do not try to subscribe if MQTT is not connected.
     if (!isConnected())
     {
@@ -542,13 +566,19 @@ bool ThingsCloudMQTT::subscribe(const String &topic, MessageReceivedCallback mes
 
     if (success)
     {
-        // Add the record to the subscription list only if it does not exists.
+        // Replace the matching record, including its callback type, on re-registration.
         bool found = false;
         for (std::size_t i = 0; i < _topicSubscriptionList.size() && !found; i++)
-            found = _topicSubscriptionList[i].topic.equals(topic);
+        {
+            if (_topicSubscriptionList[i].topic.equals(topic))
+            {
+                _topicSubscriptionList[i] = record;
+                found = true;
+            }
+        }
 
         if (!found)
-            _topicSubscriptionList.push_back({topic, messageReceivedCallback, NULL});
+            _topicSubscriptionList.push_back(record);
     }
 
     if (_enableSerialLogs)
@@ -564,32 +594,17 @@ bool ThingsCloudMQTT::subscribe(const String &topic, MessageReceivedCallback mes
 
 bool ThingsCloudMQTT::subscribe(const String &topic, MessageReceivedCallbackJSON messageReceivedCallback, uint8_t qos)
 {
-    if (subscribe(topic, (MessageReceivedCallback)NULL, qos))
-    {
-        _topicSubscriptionList[_topicSubscriptionList.size() - 1].callbackJSON = messageReceivedCallback;
-        return true;
-    }
-    return false;
+    return subscribeRecord({topic, nullptr, messageReceivedCallback, nullptr, nullptr}, qos);
 }
 
 bool ThingsCloudMQTT::subscribe(const String &topic, MessageReceivedCallbackWithTopic messageReceivedCallback, uint8_t qos)
 {
-    if (subscribe(topic, (MessageReceivedCallback)NULL, qos))
-    {
-        _topicSubscriptionList[_topicSubscriptionList.size() - 1].callbackWithTopic = messageReceivedCallback;
-        return true;
-    }
-    return false;
+    return subscribeRecord({topic, nullptr, nullptr, messageReceivedCallback, nullptr}, qos);
 }
 
 bool ThingsCloudMQTT::subscribe(const String &topic, MessageReceivedCallbackJSONWithTopic messageReceivedCallback, uint8_t qos)
 {
-    if (subscribe(topic, (MessageReceivedCallback)NULL, qos))
-    {
-        _topicSubscriptionList[_topicSubscriptionList.size() - 1].callbackJSONWithTopic = messageReceivedCallback;
-        return true;
-    }
-    return false;
+    return subscribeRecord({topic, nullptr, nullptr, nullptr, messageReceivedCallback}, qos);
 }
 
 bool ThingsCloudMQTT::unsubscribe(const String &topic)
@@ -634,6 +649,7 @@ void ThingsCloudMQTT::disconnect()
     {
         _mqttClient.disconnect();
         _mqttConnected = false;
+        onMQTTConnectionLost();
 
         if (_enableSerialLogs)
             Serial.println("MQTT: Gracefully disconnected from broker.");
@@ -689,7 +705,6 @@ bool ThingsCloudMQTT::connectToMqttBroker()
         _mqttClient.setServer(_mqttHost, _mqttServerPort);
         _mqttClient.setKeepAlive(mqttKeepAlive);
         _mqttClient.setSocketTimeout(socketTimeout);
-        setMaxPacketSize(1024);
         success = _mqttClient.connect(_mqttClientName.c_str(), _accessToken.c_str(), _projectKey, _mqttLastWillTopic, 0, _mqttLastWillRetain, _mqttLastWillMessage, _mqttCleanSession);
     }
     else
@@ -806,23 +821,15 @@ bool ThingsCloudMQTT::mqttTopicMatch(const String &topic1, const String &topic2)
 
 void ThingsCloudMQTT::mqttMessageReceivedCallback(char *topic, uint8_t *payload, unsigned int length)
 {
-    // Convert the payload into a String
-    // First, We ensure that we dont bypass the maximum size of the PubSubClient library buffer that originated the payload
-    // This buffer has a maximum length of _mqttClient.getBufferSize() and the payload begin at "headerSize + topicLength + 1"
-    unsigned int strTerminationPos;
-    if (strlen(topic) + length + 9 >= _mqttClient.getBufferSize())
+    // Copy the exact payload length without writing a terminator into PubSubClient's buffer.
+    // This also handles empty messages and packets that fill the receive buffer.
+    String payloadStr;
+    if (length > 0 && (!payloadStr.reserve(length) || !payloadStr.concat((const char *)payload, length)))
     {
-        strTerminationPos = length - 1;
-
         if (_enableSerialLogs)
-            Serial.print("MQTT! Your message may be truncated, please set setMaxPacketSize() to a higher value.\n");
+            Serial.println("MQTT! Not enough memory to copy received message.");
+        return;
     }
-    else
-        strTerminationPos = length;
-
-    // Second, we add the string termination code at the end of the payload and we convert it to a String object
-    payload[strTerminationPos] = '\0';
-    String payloadStr((char *)payload);
     String topicStr(topic);
 
     // Logging
@@ -832,39 +839,46 @@ void ThingsCloudMQTT::mqttMessageReceivedCallback(char *topic, uint8_t *payload,
     // Send the message to subscribers
     for (std::size_t i = 0; i < _topicSubscriptionList.size(); i++)
     {
-        if (mqttTopicMatch(_topicSubscriptionList[i].topic, String(topic)))
+        // A callback may publish (reusing the MQTT buffer) or update subscriptions.
+        TopicSubscriptionRecord record = _topicSubscriptionList[i];
+        if (mqttTopicMatch(record.topic, topicStr))
         {
-            if (_topicSubscriptionList[i].callback != NULL)
+            if (record.callback)
             {
-                _topicSubscriptionList[i].callback(payloadStr);
+                record.callback(payloadStr);
             }
-            if (_topicSubscriptionList[i].callbackJSON != NULL)
+            if (record.callbackWithTopic)
             {
-                DynamicJsonDocument doc(512);
-                DeserializationError error = deserializeJson(doc, payloadStr);
-                if (error)
+                record.callbackWithTopic(topicStr, payloadStr);
+            }
+            if (record.callbackJSON || record.callbackJSONWithTopic)
+            {
+                // Grow only when ArduinoJson needs more slots. A JSON array of
+                // one-character values bounds the number of slots for this input.
+                const size_t maxCapacity = JSON_ARRAY_SIZE(length / 2 + 1) + length + 1;
+                size_t capacity = length + JSON_OBJECT_SIZE(8);
+                while (true)
                 {
-                    Serial.printf("JSON deserialize error: %s\n", error.f_str());
-                    continue;
+                    DynamicJsonDocument doc(capacity);
+                    DeserializationError error = deserializeJson(doc, payloadStr);
+                    if (error == DeserializationError::NoMemory && doc.capacity() > 0 && capacity < maxCapacity)
+                    {
+                        capacity = capacity > maxCapacity / 2 ? maxCapacity : capacity * 2;
+                        continue;
+                    }
+                    if (error || !doc.is<JsonObject>())
+                    {
+                        if (_enableSerialLogs)
+                            Serial.printf("JSON deserialize error: %s\n", error ? error.c_str() : "expected object");
+                        break;
+                    }
+                    JsonObject obj = doc.as<JsonObject>();
+                    if (record.callbackJSON)
+                        record.callbackJSON(obj);
+                    if (record.callbackJSONWithTopic)
+                        record.callbackJSONWithTopic(topicStr, obj);
+                    break;
                 }
-                JsonObject obj = doc.as<JsonObject>();
-                _topicSubscriptionList[i].callbackJSON(obj);
-            }
-            if (_topicSubscriptionList[i].callbackWithTopic != NULL)
-            {
-                _topicSubscriptionList[i].callbackWithTopic(topicStr, payloadStr);
-            }
-            if (_topicSubscriptionList[i].callbackJSONWithTopic != NULL)
-            {
-                DynamicJsonDocument doc(512);
-                DeserializationError error = deserializeJson(doc, payloadStr);
-                if (error)
-                {
-                    Serial.printf("JSON deserialize error: %s\n", error.f_str());
-                    continue;
-                }
-                JsonObject obj = doc.as<JsonObject>();
-                _topicSubscriptionList[i].callbackJSONWithTopic(topicStr, obj);
             }
         }
     }
