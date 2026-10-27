@@ -5,3 +5,4 @@
 .development
 .claude
 CLAUDE.md
+.build-tests/
