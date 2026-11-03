@@ -6,3 +6,5 @@
 .claude
 CLAUDE.md
 .build-tests/
+/tests/
+/tools/
