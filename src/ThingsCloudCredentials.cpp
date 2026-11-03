@@ -125,6 +125,11 @@ namespace {
 class TCResponseSink:public Stream {
 public:
     String value;
+#if defined(ARDUINO_ARCH_ESP8266)
+    // ESP8266 HTTPClient forwards the response with Stream::sendSize(),
+    // which checks the destination's writable capacity before writing.
+    int availableForWrite() override { return int(8192-value.length()); }
+#endif
     size_t write(uint8_t byte) override{return write(&byte,1);}
     size_t write(const uint8_t* bytes,size_t length) override {
         if(length>8192-value.length())return 0;
