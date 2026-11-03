@@ -4,15 +4,27 @@
 */
 
 #include "ThingsCloudMQTT.h"
+#include <memory>
+#include "ThingsCloudProvisioningProtocol.h"
+#if defined(ARDUINO_ARCH_ESP32)
+#include <WiFiClientSecure.h>
+#if __has_include(<esp_arduino_version.h>)
+#include <esp_arduino_version.h>
+#endif
+#include <freertos/FreeRTOS.h>
+#include <freertos/task.h>
+#elif defined(ARDUINO_ARCH_ESP8266)
+#include <WiFiClientSecureBearSSL.h>
+#endif
 
 // =============== Constructor / destructor ===================
 
 ThingsCloudMQTT::ThingsCloudMQTT(
     const char *mqttHost,
     String accessToken,
-    const char *projectKey) : _mqttHost(mqttHost),
+    const char *projectKey) : _mqttHostOwned(mqttHost?mqttHost:""), _projectKeyOwned(projectKey?projectKey:""), _mqttHost(_mqttHostOwned.c_str()),
                               _accessToken(accessToken),
-                              _projectKey(projectKey),
+                              _projectKey(_projectKeyOwned.c_str()),
                               _mqttClient(mqttHost, _mqttServerPort, _wifiClient)
 {
     // WiFi connection
@@ -30,11 +42,11 @@ ThingsCloudMQTT::ThingsCloudMQTT(
     String deviceKey,
     const char *projectKey,
     String typeKey,
-    const char *apiEndpoint) : _mqttHost(mqttHost),
+    const char *apiEndpoint) : _mqttHostOwned(mqttHost?mqttHost:""), _projectKeyOwned(projectKey?projectKey:""), _apiOwned(apiEndpoint?apiEndpoint:""), _mqttHost(_mqttHostOwned.c_str()),
+                               _projectKey(_projectKeyOwned.c_str()),
+                               _apiEndpoint(_apiOwned.c_str()),
                                _deviceKey(deviceKey),
-                               _projectKey(projectKey),
                                _typeKey(typeKey),
-                               _apiEndpoint(apiEndpoint),
                                _mqttClient(mqttHost, _mqttServerPort, _wifiClient)
 {
     _wifiConnected = false;
@@ -51,8 +63,26 @@ ThingsCloudMQTT::ThingsCloudMQTT(
     initState();
 }
 
+ThingsCloudMQTT::ThingsCloudMQTT(const TCManufacturerConfig& config)
+    : ThingsCloudMQTT("", config.device_key, "", "", "") {
+    _provisioningMode=TCProvisioningMode::Manufacturer;
+    _productKey=config.product_key;_needFetchAccessToken=false;
+    // Global sketch objects are constructed before initArduino initializes NVS.
+    // Restore only from the application loop (or an explicit setup-time call).
+    _credentialsRestorePending=true;_boundedProvisioningMQTT=true;
+}
 ThingsCloudMQTT::~ThingsCloudMQTT()
 {
+    if(_claimJob) {
+        _claimJob->cancelled.store(true);
+#if defined(ARDUINO_ARCH_ESP32)
+        while(!_claimJob->done.load(std::memory_order_acquire))delay(1);
+#endif
+        delete _claimJob;
+    }
+#if defined(ARDUINO_ARCH_ESP32) || defined(ARDUINO_ARCH_ESP8266)
+    _mqttClient.disconnect();
+#endif
 }
 
 void ThingsCloudMQTT::initState()
@@ -90,17 +120,58 @@ bool ThingsCloudMQTT::fetchDeviceAccessToken()
     if (_apiEndpoint == nullptr || _apiEndpoint[0] == '\0')
         return false;
 
+    bool configuredProject=_projectMQTTEndpoint.length()>0;
+    if(configuredProject) {
+        String host;uint16_t port;
+        if(!tcParseEndpoint(_apiOwned,false,_allowPlaintext,host,port))return false;
+    }
+#if defined(ARDUINO_ARCH_ESP32)
+    std::unique_ptr<WiFiClientSecure> httpsClient;
+#elif defined(ARDUINO_ARCH_ESP8266)
+    std::unique_ptr<BearSSL::WiFiClientSecure> httpsClient;
+#endif
     HTTPClient http;
     if (_enableSerialLogs)
-        Serial.println("Request device AccessToken by DeviceKey " + _deviceKey);
+        Serial.println("Request device certificate");
     String serverPath = String(_apiEndpoint) + "/device/v1/certificate";
-#ifdef ESP32
-    bool started = http.begin(serverPath.c_str());
-#else
-    bool started = http.begin(_wifiClient, serverPath.c_str());
+    bool started=false;
+#if defined(ARDUINO_ARCH_ESP32) || defined(ARDUINO_ARCH_ESP8266)
+    if(configuredProject) {
+        http.setTimeout(10000);
+#if defined(ARDUINO_ARCH_ESP32)
+        http.setConnectTimeout(5000);
 #endif
+        if(_apiOwned.startsWith("https://")) {
+#if defined(ARDUINO_ARCH_ESP32)
+            httpsClient.reset(new WiFiClientSecure());
+            httpsClient->setHandshakeTimeout(5);
+#else
+            httpsClient.reset(new BearSSL::WiFiClientSecure());
+#endif
+            // HTTPS encryption is retained without CA configuration or server
+            // certificate verification. MQTT always uses the TCP client.
+            httpsClient->setInsecure();
+            started=http.begin(*httpsClient,serverPath.c_str());
+        } else started=http.begin(_wifiClient,serverPath.c_str());
+    } else
+#endif
+    {
+#ifdef ESP32
+        started=http.begin(serverPath.c_str());
+#else
+        started=http.begin(_wifiClient,serverPath.c_str());
+#endif
+    }
     if (!started)
     {
+        if (_enableSerialLogs)
+        {
+            Serial.printf("Certificate HTTP init failed: api_len=%u path_len=%u api_pointer_current=%d\n",
+                          (unsigned)_apiOwned.length(), (unsigned)serverPath.length(), _apiEndpoint == _apiOwned.c_str());
+#if defined(ARDUINO_ARCH_ESP32)
+            Serial.printf("Certificate heap: free=%u largest=%u\n", ESP.getFreeHeap(), ESP.getMaxAllocHeap());
+#endif
+        }
         http.end();
         return false;
     }
@@ -164,14 +235,20 @@ bool ThingsCloudMQTT::fetchDeviceAccessToken()
 void ThingsCloudMQTT::setCustomerId(const String customerId)
 {
     _customerId = customerId;
+    // Legacy SoftAP re-provisioning must refresh the current user even when a
+    // certificate was already fetched during an earlier provisioning round.
+    _accessTokenFetched = false;
+    _nextAccessTokenFetchAttemptMillis = 0;
     if (_enableSerialLogs)
-        Serial.printf("Set customerId -> %s\n", _customerId.c_str());
+        Serial.println("Claim customer context updated");
 }
 
 // =============== Main loop / connection state handling =================
 
 void ThingsCloudMQTT::loop()
 {
+    if(_credentialsRestorePending)restoreManufacturerCredentials();
+    processClaimRegistration();
     // WIFI handling
     bool wifiStateChanged = handleWiFi();
 
@@ -183,6 +260,7 @@ void ThingsCloudMQTT::loop()
     // Fetch AccessToken
     if (!isWifiConnected())
         return;
+    if (_claimJob || _claimRequired) return;
     if (_needFetchAccessToken && !_accessTokenFetched)
     {
         if (_nextAccessTokenFetchAttemptMillis > 0 && millis() < _nextAccessTokenFetchAttemptMillis)
@@ -212,12 +290,11 @@ void ThingsCloudMQTT::loop()
 bool ThingsCloudMQTT::handleWiFi()
 {
     // When it's the first call, reset the wifi radio and schedule the wifi connection
-    static bool firstLoopCall = true;
-    if (_handleWiFi && firstLoopCall)
+    if (_handleWiFi && !_wifiLoopStarted)
     {
         WiFi.disconnect(true);
         _nextWifiConnectionAttemptMillis = millis() + 500;
-        firstLoopCall = false;
+        _wifiLoopStarted = true;
         return true;
     }
 
@@ -694,18 +771,32 @@ bool ThingsCloudMQTT::connectToMqttBroker()
 {
     bool success = false;
 
+    if (!configureMQTTTransport()) return false;
     if (_mqttHost != nullptr && strlen(_mqttHost) > 0)
     {
         if (_enableSerialLogs)
         {
-            Serial.printf("MQTT: Connecting to ThingsCloud \"%s\" with AccessToken \"%s\" ... (%fs)", _mqttHost, _accessToken.c_str(), millis() / 1000.0);
+            Serial.printf("MQTT: Connecting (%fs)", millis() / 1000.0);
         }
 
+        // Bound new provisioning clients without changing legacy MQTT defaults.
+#if defined(ARDUINO_ARCH_ESP32)
+        if(_boundedProvisioningMQTT) {
+#if defined(ESP_ARDUINO_VERSION_MAJOR) && ESP_ARDUINO_VERSION_MAJOR >= 3
+            _wifiClient.setConnectionTimeout(5000);
+#else
+            _wifiClient.setTimeout(5);
+#endif
+        }
+#endif
         // explicitly set the server/port here in case they were not provided in the constructor
         _mqttClient.setServer(_mqttHost, _mqttServerPort);
         _mqttClient.setKeepAlive(mqttKeepAlive);
-        _mqttClient.setSocketTimeout(socketTimeout);
-        success = _mqttClient.connect(_mqttClientName.c_str(), _accessToken.c_str(), _projectKey, _mqttLastWillTopic, 0, _mqttLastWillRetain, _mqttLastWillMessage, _mqttCleanSession);
+        _mqttClient.setSocketTimeout(_boundedProvisioningMQTT?10:socketTimeout);
+        String username = _provisioningMode == TCProvisioningMode::Manufacturer
+            ? String("cert_type=device_secret&project_id=") + tcQueryEncode(_credentials.project_id) + "&access_token=" + tcQueryEncode(_credentials.access_token) : _accessToken;
+        const char* password = _provisioningMode == TCProvisioningMode::Manufacturer ? _credentials.device_secret.c_str() : _projectKey;
+        success = _mqttClient.connect(_mqttClientName.c_str(), username.c_str(), password, _mqttLastWillTopic, 0, _mqttLastWillRetain, _mqttLastWillMessage, _mqttCleanSession);
     }
     else
     {
@@ -899,7 +990,7 @@ String ThingsCloudMQTT::getEspChipUniqueId()
 String ThingsCloudMQTT::bytesToHex(const uint8_t buf[], size_t size)
 {
     String hex = "";
-    for (int i = 0; i < size; i++)
+    for (size_t i = 0; i < size; i++)
     {
         if (buf[i] < 0x10)
         {
@@ -908,4 +999,136 @@ String ThingsCloudMQTT::bytesToHex(const uint8_t buf[], size_t size)
         hex += String(buf[i], HEX);
     }
     return hex;
+}
+
+
+bool ThingsCloudMQTT::validProvisioningConfiguration() const {
+    if(!_deviceKey.length())return false;
+    if(_provisioningMode==TCProvisioningMode::Manufacturer)return tcValidProductKey(_productKey);
+    bool valid=_needFetchAccessToken && _projectKeyOwned.length() && _typeKey.length() && _apiOwned.length() && _mqttHostOwned.length();
+    if(valid&&_projectMQTTEndpoint.length()) {String host;uint16_t port;valid=tcParseEndpoint(_apiOwned,false,_allowPlaintext,host,port);}
+    return valid;
+}
+TCProvResult ThingsCloudMQTT::setWiFiManagementMode(TCWiFiManagement mode) {
+    if(_wifiLoopStarted&&mode==TCWiFiManagement::External)return {TCProvResultCode::InvalidState};
+    _handleWiFi=mode==TCWiFiManagement::Internal;if(mode==TCWiFiManagement::External)_boundedProvisioningMQTT=true;return {TCProvResultCode::Ok};
+}
+void ThingsCloudMQTT::setCredentialStorage(std::function<bool(String&)> load,std::function<bool(const String&)> save,std::function<bool()> clear) {
+    _loadCredentials=load;_saveCredentials=save;_clearCredentials=clear;
+}
+TCProvResult ThingsCloudMQTT::clearPlatformCredentials() {
+    if(_provisioningMode!=TCProvisioningMode::Manufacturer)return {TCProvResultCode::Unsupported};
+    // The worker never writes storage; cancellation also rejects an already
+    // completed result when loop() next consumes it. Keep its owner until done.
+    if(_claimJob)_claimJob->cancelled.store(true);
+    _claimCallback=nullptr;_claimRequired=true;_credentialsRestorePending=false;_credentialsInvalidated=true;
+    _mqttClient.disconnect();_mqttConnected=false;
+    _credentials=TCDeviceCredentials();_accessToken="";_accessTokenFetched=false;_customerId="";
+    _mqttHostOwned="";_mqttHost=_mqttHostOwned.c_str();_mqttServerPort=1883;
+    _apiOwned="";_apiEndpoint=_apiOwned.c_str();
+    bool cleared;
+    if(_loadCredentials||_saveCredentials||_clearCredentials) {
+        if(!_loadCredentials||(!_clearCredentials&&!_saveCredentials))return {TCProvResultCode::Unsupported};
+        cleared=_clearCredentials?_clearCredentials():_saveCredentials(String());
+        if(cleared) {String remaining;cleared=!_loadCredentials(remaining)||remaining.length()==0;}
+    } else cleared=tcClearCredentialsBlob();
+    return {cleared?TCProvResultCode::Ok:TCProvResultCode::InternalError};
+}
+bool ThingsCloudMQTT::restoreManufacturerCredentials() {
+    _credentialsRestorePending=false;
+    if(_provisioningMode!=TCProvisioningMode::Manufacturer||_credentialsInvalidated)return false;
+    String blob;TCDeviceCredentials c;
+    bool loaded=_loadCredentials?_loadCredentials(blob):tcLoadCredentialsBlob(blob,_deviceKey);
+    return loaded&&tcDecodeCredentials(blob,_deviceKey,_productKey,_allowPlaintext,c)&&applyManufacturerCredentials(c);
+}
+bool ThingsCloudMQTT::applyManufacturerCredentials(const TCDeviceCredentials& c) {
+    String host;uint16_t port;
+    if(!tcCredentialsValid(c,_allowPlaintext)||!tcParseEndpoint(c.mqtt_endpoint,true,_allowPlaintext,host,port))return false;
+    _mqttClient.disconnect();_mqttConnected=false;
+    _credentials=c;_accessToken=c.access_token;_accessTokenFetched=true;
+    _mqttHostOwned=host;_mqttHost=_mqttHostOwned.c_str();_mqttServerPort=port;
+    _apiOwned=c.device_api_endpoint;_apiEndpoint=_apiOwned.c_str();return true;
+}
+TCProvResult ThingsCloudMQTT::setMQTTEndpoint(const String& endpoint) {
+    if(_provisioningMode!=TCProvisioningMode::Project)return {TCProvResultCode::Unsupported};
+    String host;uint16_t port;
+    if(!tcParseEndpoint(endpoint,true,_allowPlaintext,host,port))return {TCProvResultCode::InvalidArgument};
+    _mqttClient.disconnect();_mqttConnected=false;
+    _projectMQTTEndpoint=endpoint;_mqttHostOwned=host;_mqttHost=_mqttHostOwned.c_str();_mqttServerPort=port;
+    _boundedProvisioningMQTT=true;_nextMqttConnectionAttemptMillis=millis()+500;return {TCProvResultCode::Ok};
+}
+bool ThingsCloudMQTT::configureMQTTTransport() {
+    if(_provisioningMode==TCProvisioningMode::Manufacturer&&
+       !tcCredentialsValid(_credentials,_allowPlaintext))return false;
+    return true;
+}
+TCProvResult ThingsCloudMQTT::requestClaimRegistration(const TCClaimRegistrationContext& c,TCClaimRegistrationCallback callback) {
+    if(c.provisioning_mode!=_provisioningMode||!tcValidRequestId(c.request_id)||c.timeout_ms<1000||c.timeout_ms>60000||!callback)return {TCProvResultCode::InvalidArgument};
+    if(!validProvisioningConfiguration())return {TCProvResultCode::Unsupported};
+    if(_claimJob) {
+        if(_claimJob->cancelled.load())return {TCProvResultCode::InvalidState};
+        const auto& old=_claimJob->context;
+        if(old.request_id==c.request_id && old.customer_id==c.customer_id && old.provisioning_token==c.provisioning_token &&
+           old.device_api_endpoint==c.device_api_endpoint&&old.mqtt_endpoint==c.mqtt_endpoint)return {TCProvResultCode::Ok};
+        return {TCProvResultCode::Busy};
+    }
+    for(const auto& id:_completedRequestIds)if(id==c.request_id)return {TCProvResultCode::InvalidState};
+    if(_completedRequestIds.size()>=32)return {TCProvResultCode::RestartRequired};
+    if(WiFi.status()!=WL_CONNECTED)return {TCProvResultCode::InvalidState};
+    if(_provisioningMode==TCProvisioningMode::Project) {
+        if(!tcValidCustomerId(c.customer_id)||c.provisioning_token.length()||c.device_api_endpoint.length()||c.mqtt_endpoint.length())return {TCProvResultCode::InvalidArgument};
+    } else {
+        String host;uint16_t port;
+        if(c.customer_id.length()||!c.provisioning_token.length()||c.provisioning_token.length()>4096||
+           !tcParseEndpoint(c.device_api_endpoint,false,_allowPlaintext,host,port)||!tcParseEndpoint(c.mqtt_endpoint,true,_allowPlaintext,host,port))return {TCProvResultCode::InvalidArgument};
+    }
+    if(_provisioningMode==TCProvisioningMode::Manufacturer) {
+        auto cleared=clearPlatformCredentials();if(!cleared.ok())return cleared;
+    }
+    auto* job=new TCCredentialJob();job->context=c;job->deviceKey=_deviceKey;
+    job->productKey=_provisioningMode==TCProvisioningMode::Manufacturer?_productKey:_typeKey;
+    job->projectKey=_projectKeyOwned;job->api=_provisioningMode==TCProvisioningMode::Manufacturer?c.device_api_endpoint:_apiOwned;
+    job->allowPlaintext=_allowPlaintext;job->debug=_enableSerialLogs;
+    job->started=millis();job->budget=c.timeout_ms;
+    _claimJob=job;_claimCallback=callback;_claimRequired=true;_boundedProvisioningMQTT=true;
+#if defined(ARDUINO_ARCH_ESP32)
+    if(xTaskCreate([](void* arg){tcRunCredentialJob(static_cast<TCCredentialJob*>(arg));vTaskDelete(nullptr);},"tc-certificate",8192,job,1,nullptr)!=pdPASS) {
+        _claimJob=nullptr;_claimCallback=nullptr;delete job;return {TCProvResultCode::InternalError};
+    }
+#endif
+    return {TCProvResultCode::Ok};
+}
+void ThingsCloudMQTT::cancelClaimRegistration(const String& id, bool keepRequired) {
+    if(_claimJob&&_claimJob->context.request_id==id) {
+        _claimJob->cancelled.store(true);_claimCallback=nullptr;
+        if(!keepRequired)_claimRequired=false;
+    }
+}
+void ThingsCloudMQTT::processClaimRegistration() {
+    if(!_claimJob)return;
+#if !defined(ARDUINO_ARCH_ESP32)
+    if(!_claimJob->done.load()&&(!_claimJob->nextAttempt||(int32_t)(millis()-_claimJob->nextAttempt)>=0))tcRunCredentialJob(_claimJob);
+#endif
+    auto* job=_claimJob;if(!job->done.load(std::memory_order_acquire))return;
+    if(job->cancelled.load()) {_completedRequestIds.push_back(job->context.request_id);delete job;_claimJob=nullptr;_claimCallback=nullptr;return;}
+#if !defined(ARDUINO_ARCH_ESP32)
+    bool transient=job->httpStatus<=0||job->httpStatus>=500||job->httpStatus==408||job->httpStatus==429;
+    if(!job->success&&job->error!=TCProvError::CertificateRejected&&transient&&job->context.provisioning_mode==TCProvisioningMode::Project&&
+       (uint32_t)(millis()-job->started)+10000<job->budget) {
+        job->nextAttempt=millis()+10000;job->done.store(false);return;
+    }
+#endif
+    TCClaimRegistrationResult result;result.request_id=job->context.request_id;result.success=job->success;result.error=job->error;result.http_status=job->httpStatus;
+    if(result.success) {
+        if(_provisioningMode==TCProvisioningMode::Manufacturer) {
+            String blob=tcEncodeCredentials(job->credentials,_deviceKey,_productKey);
+            bool saved=blob.length()&&(_saveCredentials?_saveCredentials(blob):tcSaveCredentialsBlob(blob,_deviceKey));
+            if(!saved||!applyManufacturerCredentials(job->credentials)) {result.success=false;result.error=TCProvError::InternalError;}
+            else _credentialsInvalidated=false;
+        } else {_accessToken=job->credentials.access_token;_accessTokenFetched=true;_customerId="";}
+        if(result.success)_claimRequired=false;
+    }
+    _completedRequestIds.push_back(result.request_id);
+    auto callback=_claimCallback;_claimCallback=nullptr;_claimJob=nullptr;delete job;
+    if(callback)callback(result);
 }

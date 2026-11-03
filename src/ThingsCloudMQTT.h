@@ -9,6 +9,7 @@
 #include <ArduinoJson.h>
 #include <PubSubClient.h>
 #include <vector>
+#include "ThingsCloudCredentials.h"
 
 #ifdef ESP8266
 
@@ -47,6 +48,24 @@ typedef std::function<void()> DelayedExecutionCallback;
 class ThingsCloudMQTT
 {
 private:
+    String _mqttHostOwned, _projectKeyOwned, _apiOwned;
+    TCProvisioningMode _provisioningMode = TCProvisioningMode::Project;
+    String _productKey, _projectMQTTEndpoint;
+    bool _allowPlaintext = false, _claimRequired = false;
+    bool _wifiLoopStarted = false;
+    bool _credentialsRestorePending = false;
+    bool _credentialsInvalidated = false;
+    bool _boundedProvisioningMQTT = false;
+    TCDeviceCredentials _credentials;
+    TCCredentialJob* _claimJob = nullptr;
+    TCClaimRegistrationCallback _claimCallback;
+    std::vector<String> _completedRequestIds;
+    std::function<bool(String&)> _loadCredentials;
+    std::function<bool(const String&)> _saveCredentials;
+    std::function<bool()> _clearCredentials;
+    void processClaimRegistration();
+    bool applyManufacturerCredentials(const TCDeviceCredentials& credentials);
+    bool configureMQTTTransport();
     // Wifi related
     bool _handleWiFi = false;
     bool _wifiConnected;
@@ -62,7 +81,7 @@ private:
     bool _mqttConnected;
     unsigned long _nextMqttConnectionAttemptMillis;
     unsigned int _mqttReconnectionAttemptDelay;
-    unsigned long _nextAccessTokenFetchAttemptMillis;
+    unsigned long _nextAccessTokenFetchAttemptMillis = 0;
     unsigned int _accessTokenFetchAttemptDelay;
     const char *_mqttHost;
     String _accessToken;
@@ -72,7 +91,7 @@ private:
     String _typeKey;
     String _customerId;
     String _mqttClientName;
-    short _mqttServerPort = 1883;
+    uint16_t _mqttServerPort = 1883;
     bool _mqttCleanSession;
     char *_mqttLastWillTopic;
     char *_mqttLastWillMessage;
@@ -124,7 +143,32 @@ public:
         String typeKey,
         const char *apiEndpoint);
 
+    explicit ThingsCloudMQTT(const TCManufacturerConfig& config);
     ~ThingsCloudMQTT();
+    ThingsCloudMQTT(const ThingsCloudMQTT&) = delete;
+    ThingsCloudMQTT& operator=(const ThingsCloudMQTT&) = delete;
+
+    TCProvisioningMode provisioningMode() const { return _provisioningMode; }
+    const String& productKey() const { return _productKey; }
+    bool validProvisioningConfiguration() const;
+    TCProvResult setWiFiManagementMode(TCWiFiManagement mode);
+    TCProvResult requestClaimRegistration(const TCClaimRegistrationContext& context, TCClaimRegistrationCallback callback);
+    void cancelClaimRegistration(const String& request_id, bool keepRequired = false);
+    void setClaimRegistrationRequired(bool required) { _claimRequired = required; }
+    // Optional Project MQTT URI (mqtt://host:port). Legacy raw-host constructors
+    // retain their original TCP behavior unless this setup-time API is called.
+    TCProvResult setMQTTEndpoint(const String& endpoint);
+    // Allow HTTP device API endpoints for local development. MQTT uses TCP.
+    void allowInsecureDevelopment(bool plaintext) { _allowPlaintext=plaintext; }
+    bool allowsPlaintextDevelopment() const { return _allowPlaintext; }
+    // Existing two-callback stores may clear by saving an empty record. An
+    // optional clear callback can remove it instead; load must then return empty.
+    void setCredentialStorage(std::function<bool(String&)> load, std::function<bool(const String&)> save,
+                              std::function<bool()> clear = nullptr);
+    bool restoreManufacturerCredentials();
+    // Manufacturer only. Stops MQTT, cancels pending registration and removes
+    // persisted + cached platform credentials. Does not clear WiFi or restart.
+    TCProvResult clearPlatformCredentials();
 
     void initState();
 

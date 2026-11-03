@@ -34,7 +34,7 @@ ThingsCloud 推出了基于 ESP32/ESP8266 Arduino 框架的 SDK，帮助物联�
 | 特性 | 说明 |
 |------|------|
 | 📶 WiFi 基本连接 | 指定 WiFi SSID/Password，连接到固定 AP |
-| 📱 WiFi 手机配网 | 使用 [ThingsX](https://www.thingscloud.xyz/docs/guide/customer-app/common-app.html) iOS/Android App 配网，无需预先写入 WiFi 信息，适合设备量产 |
+| 📱 WiFi 手机配网 | 使用 [ThingsX](https://www.thingscloud.xyz/docs/guide/customer-app/common-app.html) iOS/Android App 配网，无需预先写入 WiFi 信息，适合设备量产。支持 SoftAP（WiFi 热点）和 BLE（蓝牙）两种配置方式，均提供项目模式与厂商模式的示例代码。 |
 | 🔐 MQTT 一机一密 | 为每个模组单独烧录 MQTT 证书 |
 | 🔑 MQTT 一型一密 | 所有模组烧录相同固件，自动获取 MQTT 证书，适合设备量产 |
 | 📡 完整协议支持 | 全面支持 [ThingsCloud MQTT 接入协议](https://www.thingscloud.xyz/docs/guide/connect-device/mqtt.html)，实现双向数据实时传输 |
@@ -50,6 +50,7 @@ ThingsCloud 推出了基于 ESP32/ESP8266 Arduino 框架的 SDK，帮助物联�
 | ESP32-S2 | 低功耗、USB OTG |
 | ESP32-S3 | AI 加速、USB OTG |
 | ESP32-C3 | RISC-V、低成本 |
+| ESP32-C5 | WiFi / BLE 配网，编译验证范围见下方配网模式参考 |
 | ESP32-C6 | RISC-V、Zigbee/Thread（需安装 ESP32 开发板 v3.x.x） |
 
 ### ESP8266 系列
@@ -87,7 +88,7 @@ https://arduino.esp8266.com/stable/package_esp8266com_index.json
 
 然后在开发板管理器中，根据您的实际需要，搜索并安装 ESP32 或 ESP8266 开发板。
 
-> 💡 ESP32 开发板支持 v2.x.x 和 v3.x.x
+> 💡 原有 WiFi / MQTT 功能支持 ESP32 开发板 v2.x.x 和 v3.x.x。新增 BLE 配网还要求开发板包包含所需的配网协议与 Security1 组件，本次验证使用 Arduino-ESP32 3.3.8；不能将原有功能的版本支持范围直接视为 BLE 配网的支持范围。
 > ![](https://img-1300291923.cos.ap-beijing.myqcloud.com/articles/2024/20250611101202_80999e59ebfbc152360b35027a225247.png)
 
 > 💡 ESP8266 开发板支持 v2.x.x 和 v3.x.x
@@ -155,13 +156,14 @@ SDK 正常运行需要以下依赖库：
 
 ---
 
-### 📱 02.WiFi_Provisioning_AP_Mode - WiFi 配网
+### 📱 02.WiFi_Provisioning_AP_Mode - SoftAP 配网
 
-不需要指定 WiFi SSID 和密码，用户通过 ThingsX App 完成 WiFi 配网。
+设备创建 WiFi 热点，用户通过 ThingsX App 将目标 WiFi 信息发送给设备，无需在固件中预先写入路由器的 SSID 和密码。
 
 | 示例名称 | 说明 | 功能特点 |
 |----------|------|----------|
-| [`wifi_provisioning_cliam_device`](examples/02.WiFi_Provisioning_AP_Mode/wifi_provisioning_cliam_device/) | WiFi 配网模式示例 | 用户完成配网后领取设备 |
+| [`wifi_provisioning_cliam_device`](examples/02.WiFi_Provisioning_AP_Mode/wifi_provisioning_cliam_device/) | SoftAP 项目模式，沿用已有示例名称 | 固件预设项目及设备类型，配网时领取设备；新增可配置按键长按清除 WiFi 功能 |
+| [`wifi_provisioning_softap_manufacturer`](examples/02.WiFi_Provisioning_AP_Mode/wifi_provisioning_softap_manufacturer/) | 新增 SoftAP 厂商模式 | 固件预设 ProductKey，通过 App 下发的领取上下文获取并保存平台接入凭据 |
 | [`wifi_provisioning_reset`](examples/02.WiFi_Provisioning_AP_Mode/wifi_provisioning_reset/) | 配网重置示例 | 通过长按按键重置配网信息 |
 
 ---
@@ -179,7 +181,104 @@ SDK 正常运行需要以下依赖库：
 
 ---
 
-### 🛠️ 10.IoT_Tutorials - 物联网应用实例
+### 📲 04.WiFi_Provisioning_BLE - 蓝牙配网
+
+设备通过 BLE 接收 WiFi 配置和领取上下文，再连接路由器并接入 ThingsCloud。SDK 内置配网使用的裁剪版 NimBLE，无需另行安装 NimBLE-Arduino；请勿同时链接另一份 NimBLE-Arduino。
+
+| 示例名称 | 说明 | 功能特点 |
+|----------|------|----------|
+| [`wifi_provisioning_ble_project`](examples/04.WiFi_Provisioning_BLE/wifi_provisioning_ble_project/) | 新增 BLE 项目模式 | 固件指定项目及设备类型，通过蓝牙完成配网和领取设备 |
+| [`wifi_provisioning_ble_manufacturer`](examples/04.WiFi_Provisioning_BLE/wifi_provisioning_ble_manufacturer/) | 新增 BLE 厂商模式 | 固件指定 ProductKey，通过蓝牙接收领取上下文并保存平台接入凭据 |
+
+BLE 配网要求芯片同时具备 WiFi 和 BLE 能力，例如 ESP32、ESP32-C3、ESP32-S3、ESP32-C5、ESP32-C6。ESP8266、ESP8285 和 ESP32-S2 不支持 BLE 配网。具体构建条件以示例中的说明和编译检查为准；下方编译矩阵分别记录各子系列的构建结果，实际手机互通仍需在目标硬件上验证。
+
+四种完整配网示例均通过 `BUTTON_PIN` 配置重置按键：使用内部上拉，按键另一端接 GND，按住至少 3 秒后松开触发清除与重启。项目模式仅清除 WiFi；厂商模式还清除已保存的平台接入凭据。DeviceKey、ProductKey 等固件配置不变，设备与平台的解绑需另行操作。请根据实际开发板选择 GPIO，避开串口及其他外设使用的引脚。
+
+BLE 示例的 Flash 容量及分区设置见“配网模式参考”；默认应用分区不足时，编译器会报告 `Sketch too big`。
+
+---
+
+## 📐 配网模式参考
+
+### 项目模式与厂商模式
+
+SoftAP 和 BLE 决定手机向设备传输配网信息的方式；项目模式和厂商模式决定设备如何确定目标项目、领取设备并获取接入凭据，两者可以组合成四种配网方案。
+
+| 比较项 | 项目模式 | 厂商模式 |
+|--------|----------|----------|
+| 固件预设信息 | MQTT / 设备 API 接入地址、ProjectKey、TypeKey；DeviceKey 可自动生成 | ProductKey；DeviceKey 可自动生成，无需预置目标项目的 ProjectKey |
+| App 提供的信息 | WiFi 配置及领取用户的 customer_id | WiFi 配置、provisioning_token、设备 API 和 MQTT 接入地址 |
+| 项目选择 | 由固件中的项目配置确定 | 由平台授权的领取上下文确定，同一固件可用于不同目标项目 |
+| 接入凭据 | 通过项目证书接口动态获取 AccessToken，重启后重新获取 | 通过厂商领取接口获取 device_secret 等接入凭据并持久化，后续启动从存储恢复 |
+| 适用场景 | 设备归属固定项目，项目和设备类型在烧录前已确定 | 厂商统一生产固件，在交付或配网时确定目标项目 |
+
+### 编译环境与程序大小
+
+不同 ESP32 子系列采用的处理器架构、底层无线协议栈及编译配置不同，同一示例生成的固件大小也会不同。以下为 2026-11-03 对 SDK 1.0.16 工作区代码的本地编译结果，覆盖 8 个标准开发板目标、共 26 个适用的“芯片 × 配网模式”组合，本轮通过 26/26 项。
+
+| 项目 | 配置 |
+|------|------|
+| 构建工具 | Arduino CLI 1.5.0 |
+| Arduino-ESP32 | 3.3.8 |
+| ESP8266 Arduino core | 3.1.2（用于 ESP8266 和 ESP8285） |
+| ArduinoJson | 6.21.5 |
+| PubSubClient | 2.8 |
+| 其他选项 | 使用下表 FQBN；未显式指定的 CPU、Flash 频率、USB 等选项保持开发板包默认值，不启用 PSRAM |
+
+为统一跨架构的比较口径，下面统计**应用固件 `.bin` 文件大小，单位为字节**，不包含单独的 bootloader、分区表、文件系统镜像或合并烧录镜像。ESP32 编译器的 `Sketch uses` 与 ESP8266 的 `Code in flash` 不是相同统计口径，因此不混入本表直接比较；文件大小与程序空间占用也会因镜像头、对齐等因素略有不同。
+
+| 芯片目标 | SoftAP 项目模式 | SoftAP 厂商模式 | BLE 项目模式 | BLE 厂商模式 |
+|----------|----------------:|----------------:|-------------:|-------------:|
+| ESP32（经典系列） | 1,181,024 | 1,181,184 | 1,398,240 | 1,398,128 |
+| ESP32-S2 | 1,116,784 | 1,101,888 | 不支持 BLE | 不支持 BLE |
+| ESP32-S3 | 1,159,056 | 1,137,696 | 1,303,024 | 1,302,928 |
+| ESP32-C3 | 1,240,640 | 1,223,040 | 1,410,480 | 1,410,384 |
+| ESP32-C5 | 1,302,032 | 1,285,920 | 1,620,496 | 1,620,400 |
+| ESP32-C6 | 1,254,976 | 1,237,712 | 1,567,328 | 1,567,248 |
+| ESP8266 | 514,944 | 514,672 | 不支持 BLE | 不支持 BLE |
+| ESP8285 | 514,912 | 514,640 | 不支持 BLE | 不支持 BLE |
+
+四列依次对应 `wifi_provisioning_cliam_device`、`wifi_provisioning_softap_manufacturer`、`wifi_provisioning_ble_project`、`wifi_provisioning_ble_manufacturer`。ESP32-S2、ESP8266、ESP8285 不具备 BLE 能力，表中的“不支持 BLE”不是编译失败。
+
+为便于复现，各目标的完整 FQBN 及 Flash 布局如下。ESP32 系列统一使用 4MB Flash 和 `min_spiffs`，便于比较同一容量规划下的四种方案；这不表示所有子系列、所有 SoftAP 示例都必须使用该分区。
+
+| 芯片目标 | FQBN | Flash 与布局 |
+|----------|------|--------------|
+| ESP32（经典系列） | `esp32:esp32:esp32:FlashSize=4M,PartitionScheme=min_spiffs` | 4MB；Minimal SPIFFS，单个应用分区 1,966,080 字节，文件系统 128KiB |
+| ESP32-S2 | `esp32:esp32:esp32s2:FlashSize=4M,PartitionScheme=min_spiffs` | 4MB；Minimal SPIFFS，单个应用分区 1,966,080 字节，文件系统 128KiB |
+| ESP32-S3 | `esp32:esp32:esp32s3:FlashSize=4M,PartitionScheme=min_spiffs` | 4MB；Minimal SPIFFS，单个应用分区 1,966,080 字节，文件系统 128KiB |
+| ESP32-C3 | `esp32:esp32:esp32c3:FlashSize=4M,PartitionScheme=min_spiffs` | 4MB；Minimal SPIFFS，单个应用分区 1,966,080 字节，文件系统 128KiB |
+| ESP32-C5 | `esp32:esp32:esp32c5:FlashSize=4M,PartitionScheme=min_spiffs` | 4MB；Minimal SPIFFS，单个应用分区 1,966,080 字节，文件系统 128KiB |
+| ESP32-C6 | `esp32:esp32:esp32c6:FlashSize=4M,PartitionScheme=min_spiffs` | 4MB；Minimal SPIFFS，单个应用分区 1,966,080 字节，文件系统 128KiB |
+| ESP8266 | `esp8266:esp8266:generic:eesz=4M1M` | 4MB；4M1M，文件系统约 1MB |
+| ESP8285 | `esp8266:esp8266:esp8285:eesz=1M64` | 1MB；1M64，文件系统 64KiB |
+
+该矩阵覆盖上述标准目标的适用配网组合，不穷举所有第三方开发板、主频、PSRAM 和 Flash 容量配置。ESP32-C2、ESP32-C61 需要额外的 Arduino-ESP32 构建支持，未纳入本轮验证；ESP32-H2、ESP32-P4 没有片上 WiFi，不适用这些独立 WiFi 配网示例。
+
+表中是包含按键、指示灯或模拟数据上报等逻辑的完整示例固件，不是 SDK 库文件或配网模块单独占用的空间；示例之间的大小差值也不能全部归因于配网协议本身。
+
+这些结果仅验证编译、链接及镜像容量，不代表已完成各芯片上的手机配网、传感器运行、OTA 或掉电恢复实测。尤其是 ESP8285 的 1MB 配置，固件可烧录不等于已验证其 OTA 空间满足要求；ESP8266/ESP8285 厂商模式仍需准备可用的持久化存储。依赖版本、构建选项和业务代码变化都会影响大小，应以最终产品的实际构建结果为准。
+
+### Flash 容量与分区选择
+
+Flash 总容量与应用分区容量是两个不同的指标。即使模组具有 4MB Flash，默认分区也不会将全部空间分配给单个应用；OTA 通常需要保留两个应用分区，此外还有 NVS 和文件系统等区域。
+
+- **4MB Flash（ESP32 系列）：**以经典 ESP32 为例，默认分区的单个应用容量为 1,310,720 字节，不足以容纳约 1.40MB 的 BLE 示例。可在 Arduino IDE 中选择 `Tools > Partition Scheme > Minimal SPIFFS (1.9MB APP with OTA/128KB SPIFFS)`；该方案的单个应用容量为 1,966,080 字节，保留 OTA，并将文件系统容量缩小为 128KiB。经典 ESP32 对应 CLI 目标为 `esp32:esp32:esp32:FlashSize=4M,PartitionScheme=min_spiffs`，其他子系列的目标名称见上表。ESP8266 / ESP8285 的布局选项不同，不使用这套 ESP32 分区表。
+- **8MB Flash：**可为应用扩展、后续 OTA 固件增长及文件系统提供更充裕的容量。请按模组实际容量设置 `Flash Size`，并选择与 8MB Flash 匹配、应用分区容量足够且满足 OTA 要求的分区方案。仅更换更大容量的模组而继续使用原分区表，不会自动扩大应用分区。
+
+菜单名称及可用方案以所选开发板为准。本轮已验证的 ESP32 系列固件均可容纳在 4MB Flash 的 `min_spiffs` 布局中，无需仅为这些配网示例升级至 8MB；量产选型应同时为业务功能、OTA 升级和文件存储预留空间。8MB 的说明为容量规划建议，本表未单独验证 8MB 构建。以上结果仅验证编译和容量，实际配网、OTA 及掉电恢复仍需在目标硬件上验证。更改分区表应在开发或生产烧录阶段规划，已有设备需另行制定迁移方案。
+
+### ESP8266 厂商模式的存储准备
+
+厂商模式需要持久保存平台接入凭据。ESP32 默认使用 NVS；ESP8266 默认使用 LittleFS。SDK 已负责挂载、读写和清除凭据，但不会自动格式化应用的文件系统。
+
+ESP8266 使用默认厂商存储前，应由应用或生产流程配置文件系统空间，并确保 LittleFS 已完成首次格式化且可正常挂载。首次格式化应在配网开始前完成；挂载失败也可能由损坏或分区不匹配导致，不应在通用 SDK 中直接按“空白存储”处理并自动格式化，以免清除应用已有文件。
+
+应用也可通过 `setCredentialStorage(load, save, clear)` 提供其他持久化存储实现。项目模式不依赖这套厂商凭据存储。当前 ESP8266 厂商示例尚未提供自动完成首次格式化的流程，使用该示例时需在应用层补齐存储准备。
+
+---
+
+## 🛠️ 10.IoT_Tutorials - 物联网应用实例
 
 完整的物联网应用示例，涵盖传感器、继电器、DTU、OTA 等场景。
 

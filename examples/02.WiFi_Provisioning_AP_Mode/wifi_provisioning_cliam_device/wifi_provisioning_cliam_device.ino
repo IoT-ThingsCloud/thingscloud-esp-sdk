@@ -1,9 +1,20 @@
 /**
  * 功能介绍：通过 AP 配网模式连接 WiFi，支持 ThingsX App 配网并自动创建设备，定时上报模拟传感器数据。
+ * 适用芯片：ESP8266、ESP32（经典系列）、ESP32-S2、ESP32-S3、ESP32-C3、ESP32-C5、ESP32-C6。
+ * 补充说明：ESP32-C2、ESP32-C61需额外的Arduino-ESP32构建支持，本示例暂未验证。
+ * 不适用：ESP32-H2、ESP32-P4（无片上WiFi，本示例不包含外接无线芯片方案）。
  */
 
 #include <ThingsCloudWiFiManager.h>
 #include <ThingsCloudMQTT.h>
+#include "ProvisioningButton.h"
+
+// 按键配置：内部上拉输入（INPUT_PULLUP），低电平有效。
+// 接线方式：常开瞬时按键一端接此 GPIO，另一端接 GND。
+// 电平状态：松开时为高电平（HIGH），按下接地时为低电平（LOW）。
+// 配网清除按键 GPIO，可根据实际硬件修改，避免与串口或 LED 引脚冲突。
+const int BUTTON_PIN = 3;
+ProvisioningButton resetButton;
 
 //======================================================
 // 在 ThingsCloud 控制台的设备详情页中，复制以下设备连接信息
@@ -27,17 +38,26 @@ ThingsCloudMQTT client(
 ThingsCloudWiFiManager wm(WiFi_AP_SSID, WiFi_AP_PASSWORD);
 
 // 设置 LED GPIO 引脚
-const int LED_PIN = 3;
+const int LED_PIN = 2;
 // 上报数据的间隔时间计时器
 unsigned long timer1 = millis();
 // 设置定时上报数据的时间间隔，单位是 ms。免费版项目请务必大于30秒，否则设备可能会被限连。
 const int report_interval = 1000 * 60 * 5;
 
 void pubSensors();
+void resetProvisioning();
 
 void setup()
 {
     Serial.begin(115200);
+
+    if (!resetButton.begin(BUTTON_PIN))
+    {
+        Serial.println("Provisioning button initialization failed");
+        delay(1000);
+        ESP.restart();
+    }
+
 
     // 拉低 LED
     pinMode(LED_PIN, OUTPUT);
@@ -49,13 +69,16 @@ void setup()
     // 关联 MQTT 客户端和配网管理器
     wm.linkMQTTClient(&client);
 
+    // 使用非阻塞门户，等待配网时也能响应长按按键。
+    wm.setConfigPortalBlocking(false);
+
     // 调试配网可以取消以下注释，用于清空之前保存的 WiFi 配网信息，每次设备开机都需要重新配网。
     // 实际产品中，将清空配网信息放在例如设备的按键事件中，由用户操作触发设备重新进入配网状态。
     // wm.resetSettings();
 
     // 如果设备未配网，则启动 AP 配网模式，等待 ThingsX App 为设备配网
     // 如果已配网，则直接连接 WiFi
-    if (!wm.autoConnect())
+    if (!wm.autoConnect() && !wm.getConfigPortalActive())
     {
         Serial.println("\nWiFi provisioning failed, will restart to retry");
         delay(1000);
@@ -90,6 +113,25 @@ void pubSensors()
 
 void loop()
 {
+    // 按住3秒后松开，在主循环中清除配置并重启。
+    if (resetButton.takeRequest())
+    {
+        resetProvisioning();
+        return;
+    }
+    if (wm.getConfigPortalActive())
+    {
+        const bool connected = wm.process();
+        if (!wm.getConfigPortalActive() && !connected)
+        {
+            Serial.println("WiFi provisioning failed, will restart to retry");
+            delay(1000);
+            ESP.restart();
+        }
+        delay(2);
+        return;
+    }
+
     client.loop();
 
     // 按间隔时间上报传感器数据
@@ -98,4 +140,13 @@ void loop()
         timer1 = millis();
         pubSensors();
     }
+}
+// 项目模式仅清除WiFi；厂商模式还会清除已保存的平台接入凭据。
+void resetProvisioning()
+{
+    if (wm.getConfigPortalActive()) wm.stopConfigPortal();
+    wm.resetSettings();
+    Serial.println("Provisioning settings cleared, restarting");
+    delay(100);
+    ESP.restart();
 }

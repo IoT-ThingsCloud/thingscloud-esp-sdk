@@ -1,6 +1,6 @@
 {
     "name": "ThingsCloud_ESP_SDK",
-    "version": "1.0.15",
+    "version": "1.0.16",
     "description": "ThingsCloud IoT Platform WiFi and MQTT client library for ESP8266/ESP32 based boards using arduino framework.",
     "keywords": "mqtt, iot, ThingsCloud, esp32, esp8266, arduino, platformio",
     "repository": {
@@ -21,6 +21,17 @@
     },
     "homepage": "https://www.thingscloud.xyz/",
     "frameworks": "arduino",
+    "export": {
+        "include": [
+            "src",
+            "examples",
+            "library.json",
+            "library.properties",
+            "README.md",
+            "CHANGELOG.md",
+            "LICENSE"
+        ]
+    },
     "platforms": [
         "espressif8266",
         "espressif32"

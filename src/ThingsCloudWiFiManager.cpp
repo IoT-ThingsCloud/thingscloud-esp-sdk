@@ -4,6 +4,7 @@
 */
 
 #include "ThingsCloudWiFiManager.h"
+#include "ThingsCloudProvisioningProtocol.h"
 #include <ArduinoJson.h>
 
 #if defined(ESP8266) || defined(ESP32)
@@ -79,7 +80,20 @@ boolean ThingsCloudWiFiManager::autoConnect()
 #ifdef WM_DEBUG_LEVEL
     DEBUG_WM(F("AutoConnect"));
 #endif
-    if (getWiFiIsSaved())
+    bool useSavedWiFi=getWiFiIsSaved();
+    if(useSavedWiFi&&_mqttClient&&_mqttClient->provisioningMode()==TCProvisioningMode::Manufacturer&&
+       !_mqttClient->restoreManufacturerCredentials()) {
+        // Interrupted/invalid manufacturer registration must open provisioning
+        // again. Never connect a saved network using an incomplete identity.
+        _mqttClient->setClaimRegistrationRequired(true);
+#ifdef ESP32
+        WiFi.disconnect(false,true);
+#else
+        WiFi.persistent(true);WiFi.disconnect(true);WiFi.persistent(false);
+#endif
+        useSavedWiFi=false;
+    }
+    if (useSavedWiFi)
     {
         _startconn = millis();
         _begin();
@@ -425,6 +439,7 @@ void ThingsCloudWiFiManager::setupConfigPortal()
     server->on(String(FPSTR("/api/wifilist")).c_str(), std::bind(&ThingsCloudWiFiManager::handleWifiList, this));
     server->on(String(FPSTR("/api/wifisave")).c_str(), std::bind(&ThingsCloudWiFiManager::handleWifiSave, this));
     server->on(String(FPSTR("/api/info")).c_str(), std::bind(&ThingsCloudWiFiManager::handleInfo, this));
+    server->on("/api/provisioning", HTTP_GET, std::bind(&ThingsCloudWiFiManager::handleProvisioning, this));
     server->on(String(FPSTR("/api/reset")).c_str(), std::bind(&ThingsCloudWiFiManager::handleReset, this));
     server->on(String(FPSTR("/api/wifistatus")).c_str(), std::bind(&ThingsCloudWiFiManager::handleWiFiStatus, this));
     server->onNotFound(std::bind(&ThingsCloudWiFiManager::handleNotFound, this));
@@ -437,6 +452,7 @@ void ThingsCloudWiFiManager::setupConfigPortal()
 
 boolean ThingsCloudWiFiManager::startConfigPortal()
 {
+    if(tcProvisioningTransportBusy())return false;
     _begin();
 
 #ifdef WM_DEBUG_LEVEL
@@ -640,6 +656,13 @@ uint8_t ThingsCloudWiFiManager::processConfigPortal()
                 }
                 if (!_connectonsave)
                     return WL_IDLE_STATUS;
+                if(_mqttClient&&_claimContextReady) {
+                    auto queued=_mqttClient->requestClaimRegistration(_claimContext,[](const TCClaimRegistrationResult&){});
+                    _claimContext.provisioning_token="";_claimContextReady=false;
+                    if(!queued.ok()) {
+                        shutdownConfigPortal();return WL_CONNECT_FAILED;
+                    }
+                }
                 shutdownConfigPortal();
                 return WL_CONNECTED; // CONNECT SUCCESS
             }
@@ -843,7 +866,6 @@ bool ThingsCloudWiFiManager::wifiConnectNew(String ssid, String pass, bool conne
 #ifdef WM_DEBUG_LEVEL
     // DEBUG_WM(DEBUG_DEV,F("CONNECTED: "),WiFi.status() == WL_CONNECTED ? "Y" : "NO");
     DEBUG_WM(F("Connecting to NEW AP:"), ssid);
-    DEBUG_WM(DEBUG_DEV, F("Using Password:"), pass);
 #endif
     WiFi_enableSTA(true, storeSTAmode); // storeSTAmode will also toggle STA on in default opmode (persistent) if true (default)
     WiFi.persistent(true);
@@ -867,7 +889,6 @@ bool ThingsCloudWiFiManager::wifiConnectDefault()
 
 #ifdef WM_DEBUG_LEVEL
     DEBUG_WM(F("Connecting to SAVED AP:"), WiFi_SSID(true));
-    DEBUG_WM(DEBUG_DEV, F("Using Password:"), WiFi_psk(true));
 #endif
 
     ret = WiFi_enableSTA(true, storeSTAmode);
@@ -1250,21 +1271,54 @@ void ThingsCloudWiFiManager::handleWifiSave()
 #endif
     String page;
 
-    // SAVE/connect here
-    _ssid = server->arg(F("ssid")).c_str();
-    _pass = server->arg(F("password")).c_str();
-    _customerId = server->arg(F("customer_id")).c_str();
-
-    if (_customerId == "")
+    if (!_mqttClient || _mqttClient->provisioningMode() == TCProvisioningMode::Project)
     {
-        page = "{\"result\":false}";
-        server->sendHeader(FPSTR(HTTP_HEAD_CORS), FPSTR(HTTP_HEAD_CORS_ALLOW_ALL));
-        server->send(200, FPSTR(HTTP_HEAD_JSON), page);
-        return;
+        // Keep the existing Project SoftAP contract and certificate path.
+        _ssid = server->arg(F("ssid")).c_str();
+        _pass = server->arg(F("password")).c_str();
+        _customerId = server->arg(F("customer_id")).c_str();
+        if (_customerId == "")
+        {
+            server->sendHeader(FPSTR(HTTP_HEAD_CORS), FPSTR(HTTP_HEAD_CORS_ALLOW_ALL));
+            server->send(200, FPSTR(HTTP_HEAD_JSON), "{\"result\":false}");
+            return;
+        }
+        if (_mqttClient)
+        {
+            _mqttClient->setCustomerId(this->getCustomerId());
+        }
     }
-    if (this->_mqttClient)
+    else
     {
-        this->_mqttClient->setCustomerId(this->getCustomerId());
+        // Manufacturer context must be complete before changing WiFi state.
+        String ssid=server->arg(F("ssid")), password=server->arg(F("password"));
+        TCClaimRegistrationContext context;
+        context.provisioning_mode=TCProvisioningMode::Manufacturer;
+        bool valid=server->method()==HTTP_POST&&ssid.length()>0&&ssid.length()<=32&&password.length()<=64;
+        for(int i=0;i<server->args();++i)for(int k=i+1;k<server->args();++k)
+            if(server->argName(i)==server->argName(k))valid=false;
+        DynamicJsonDocument d(12288);
+        d["provisioning_token"]=server->arg("provisioning_token");
+        d["device_api_endpoint"]=server->arg("device_api_endpoint");
+        d["mqtt_endpoint"]=server->arg("mqtt_endpoint");
+        valid=valid&&!server->hasArg("customer_id")&&!server->hasArg("product_key")&&
+            measureJson(d)<=TCProvisioningSession::ContextLimit&&
+            tcReadManufacturerContext(d.as<JsonObjectConst>(),context,_mqttClient->allowsPlaintextDevelopment());
+        if(!valid||!_mqttClient->validProvisioningConfiguration()) {
+            server->send(400,FPSTR(HTTP_HEAD_JSON),"{\"result\":false,\"error\":\"invalid_provisioning_context\"}");return;
+        }
+        // Clear the old account before processConfigPortal() saves new WiFi.
+        auto cleared=_mqttClient->clearPlatformCredentials();
+        if(!cleared.ok()) {
+            server->send(500,FPSTR(HTTP_HEAD_JSON),"{\"result\":false,\"error\":\"credential_clear_failed\"}");return;
+        }
+        // Generate an internal UUID for the new manufacturer registration queue.
+        char request[37];unsigned long a=(unsigned long)random(0x7fffffff),b=(unsigned long)random(0x7fffffff);
+        snprintf(request,sizeof(request),"%08lx-%04lx-4%03lx-8%03lx-%04lx%08lx",a,b&0xffff,(b>>16)&0xfff,a&0xfff,(a>>16)&0xffff,(unsigned long)millis());
+        context.request_id=request;
+        _ssid=ssid;_pass=password;_customerId=context.customer_id;
+        _claimContext=context;_claimContextReady=true;
+        _mqttClient->setClaimRegistrationRequired(true);
     }
 
     if (server->arg(FPSTR(S_ip)) != "")
@@ -1314,6 +1368,14 @@ void ThingsCloudWiFiManager::handleWifiSave()
 /**
  * HTTPD CALLBACK info page
  */
+void ThingsCloudWiFiManager::handleProvisioning()
+{
+    String page=String("{\"provisioning_mode\":\"")+
+        tcProvisioningModeName(_mqttClient?_mqttClient->provisioningMode():TCProvisioningMode::Project)+"\"}";
+    server->sendHeader(FPSTR(HTTP_HEAD_CORS),FPSTR(HTTP_HEAD_CORS_ALLOW_ALL));
+    server->send(200,FPSTR(HTTP_HEAD_JSON),page);
+}
+
 void ThingsCloudWiFiManager::handleInfo()
 {
 #ifdef WM_DEBUG_LEVEL
@@ -2178,7 +2240,6 @@ void ThingsCloudWiFiManager::debugSoftAPConfig()
     DEBUG_WM(F("SoftAP Configuration"));
     DEBUG_WM(FPSTR(D_HR));
     DEBUG_WM(F("ssid:            "), (char *)config.ssid);
-    DEBUG_WM(F("password:        "), (char *)config.password);
     DEBUG_WM(F("ssid_len:        "), config.ssid_len);
     DEBUG_WM(F("channel:         "), config.channel);
     DEBUG_WM(F("authmode:        "), config.authmode);
@@ -2254,7 +2315,6 @@ boolean ThingsCloudWiFiManager::validApPassword()
         }
 #ifdef WM_DEBUG_LEVEL
         DEBUG_WM(DEBUG_VERBOSE, F("AccessPoint set password is VALID"));
-        DEBUG_WM(DEBUG_DEV, "ap pass", _apPassword);
 #endif
     }
     return true;

@@ -362,6 +362,8 @@ private:
     String _defaultpass = "";
     String _deviceKey = "";
     String _customerId = "";
+    TCClaimRegistrationContext _claimContext;
+    bool _claimContextReady = false;
     ThingsCloudMQTT *_mqttClient = NULL;
 
     // options flags
@@ -443,6 +445,7 @@ private:
     void handleWifiList();
     void handleWifiSave();
     void handleInfo();
+    void handleProvisioning();
     void handleReset();
     void handleNotFound();
     void handleWiFiStatus();
