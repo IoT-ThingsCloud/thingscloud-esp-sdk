@@ -299,6 +299,7 @@ ESP8266 使用默认厂商存储前，应由应用或生产流程配置文件系
 | [`esp01_relay`](examples/10.IoT_Tutorials/esp01_relay/) | ESP8266 ESP01 继电器板属性控制 | ESP01 继电器模块 |
 | [`esp01_relay_advanced`](examples/10.IoT_Tutorials/esp01_relay_advanced/) | ESP01 继电器板高级控制（属性 + 命令延迟反转） | ESP01 电磁阀/电磁锁 |
 | [`esp01_relay_wifi_provisioning`](examples/10.IoT_Tutorials/esp01_relay_wifi_provisioning/) | ESP01 继电器板 WiFi 配网版 | 支持 ThingsX App 配网并自动创建设备，动态获取证书 |
+| [`esp8266_smart_power_socket`](examples/10.IoT_Tutorials/esp8266_smart_power_socket/) | ESP8266 插座，SoftAP 厂商配网、开关控制、HLW8032 计量及累计电量 | 智能插座、用电监测 |
 
 #### 💡 执行器控制类
 
