@@ -38,6 +38,7 @@ ThingsCloud 推出了基于 ESP32/ESP8266 Arduino 框架的 SDK，帮助物联�
 | 🔐 MQTT 一机一密 | 为每个模组单独烧录 MQTT 证书 |
 | 🔑 MQTT 一型一密 | 所有模组烧录相同固件，自动获取 MQTT 证书，适合设备量产 |
 | 📡 完整协议支持 | 全面支持 [ThingsCloud MQTT 接入协议](https://www.thingscloud.xyz/docs/guide/connect-device/mqtt.html)，实现双向数据实时传输 |
+| 🔗 自动重连 | 支持 MQTT 断线后自动重连 |
 | 🔄 OTA 升级 | 支持固件 OTA 升级，结合 ThingsCloud 版本管理功能 |
 
 ## 🎯 支持模组型号

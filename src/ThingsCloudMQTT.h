@@ -48,6 +48,25 @@ typedef std::function<void()> DelayedExecutionCallback;
 class ThingsCloudMQTT
 {
 private:
+    // Elapsed-time comparisons survive 32-bit millis() wrap; zero is a valid time.
+    struct ConnectionRetryTimer
+    {
+        uint32_t startedMillis = 0;
+        uint32_t delayMillis = 0;
+        bool active = false;
+        void schedule(uint32_t delay)
+        {
+            startedMillis = static_cast<uint32_t>(millis());
+            delayMillis = delay;
+            active = true;
+        }
+        void cancel() { active = false; }
+        bool due() const
+        {
+            return active && static_cast<uint32_t>(static_cast<uint32_t>(millis()) - startedMillis) >= delayMillis;
+        }
+    };
+
     String _mqttHostOwned, _projectKeyOwned, _apiOwned;
     TCProvisioningMode _provisioningMode = TCProvisioningMode::Project;
     String _productKey, _projectMQTTEndpoint;
@@ -71,7 +90,7 @@ private:
     bool _wifiConnected;
     bool _connectingToWifi;
     unsigned long _lastWifiConnectiomAttemptMillis;
-    unsigned long _nextWifiConnectionAttemptMillis;
+    ConnectionRetryTimer _wifiRetry;
     unsigned int _wifiReconnectionAttemptDelay;
     const char *_wifiSsid;
     const char *_wifiPassword;
@@ -79,9 +98,10 @@ private:
 
     // MQTT related
     bool _mqttConnected;
-    unsigned long _nextMqttConnectionAttemptMillis;
+    ConnectionRetryTimer _mqttRetry;
     unsigned int _mqttReconnectionAttemptDelay;
-    unsigned long _nextAccessTokenFetchAttemptMillis = 0;
+    bool _mqttFixedReconnectionDelay = false;
+    ConnectionRetryTimer _accessTokenRetry;
     unsigned int _accessTokenFetchAttemptDelay;
     const char *_mqttHost;
     String _accessToken;
@@ -226,8 +246,13 @@ public:
     inline void setOnWifiConnect(ConnectionStatusCallback callback) { _onWifiConnect = callback; };
     inline void setOnWifiDisconnect(ConnectionStatusCallback callback) { _onWifiDisconnect = callback; };
 
-    // Allow to set the minimum delay between each MQTT reconnection attempt. 15 seconds by default.
-    inline void setMqttReconnectionAttemptDelay(const unsigned int milliseconds) { _mqttReconnectionAttemptDelay = milliseconds; };
+    // Override the default 30/60/120-second staged backoff with a fixed base delay.
+    // Minimum 1000 ms; each retry adds 0-20% hardware-random jitter.
+    inline void setMqttReconnectionAttemptDelay(const unsigned int milliseconds)
+    {
+        _mqttReconnectionAttemptDelay = milliseconds < 1000 ? 1000 : milliseconds;
+        _mqttFixedReconnectionDelay = true;
+    }
 
     // Allow to set the minimum delay between each WiFi reconnection attempt. 60 seconds by default.
     inline void setWifiReconnectionAttemptDelay(const unsigned int milliseconds) { _wifiReconnectionAttemptDelay = milliseconds; };
@@ -235,6 +260,8 @@ public:
 private:
     bool handleWiFi();
     bool handleMQTT();
+    uint32_t mqttRetryDelay() const;
+    void scheduleMqttRetry();
     void onWiFiConnectionEstablished();
     void onWiFiConnectionLost();
     void onMQTTConnectionEstablished();

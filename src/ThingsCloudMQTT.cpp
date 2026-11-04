@@ -5,8 +5,10 @@
 
 #include "ThingsCloudMQTT.h"
 #include <memory>
+#include <limits>
 #include "ThingsCloudProvisioningProtocol.h"
 #if defined(ARDUINO_ARCH_ESP32)
+#include <esp_random.h>
 #include <WiFiClientSecure.h>
 #if __has_include(<esp_arduino_version.h>)
 #include <esp_arduino_version.h>
@@ -15,6 +17,9 @@
 #include <freertos/task.h>
 #elif defined(ARDUINO_ARCH_ESP8266)
 #include <WiFiClientSecureBearSSL.h>
+extern "C" {
+#include <osapi.h>
+}
 #endif
 
 // =============== Constructor / destructor ===================
@@ -30,7 +35,6 @@ ThingsCloudMQTT::ThingsCloudMQTT(
     // WiFi connection
     _wifiConnected = false;
     _connectingToWifi = false;
-    _nextWifiConnectionAttemptMillis = 500;
     _lastWifiConnectiomAttemptMillis = 0;
     _wifiReconnectionAttemptDelay = 60 * 1000;
 
@@ -51,7 +55,6 @@ ThingsCloudMQTT::ThingsCloudMQTT(
 {
     _wifiConnected = false;
     _connectingToWifi = false;
-    _nextWifiConnectionAttemptMillis = 500;
     _lastWifiConnectiomAttemptMillis = 0;
     _wifiReconnectionAttemptDelay = 60 * 1000;
     _needFetchAccessToken = true;
@@ -90,8 +93,10 @@ void ThingsCloudMQTT::initState()
     // MQTT client
     _mqttClientName = String(DEFAULT_MQTT_CLIENT_NAME) + "_" + getEspChipUniqueId();
     _mqttConnected = false;
-    _nextMqttConnectionAttemptMillis = 0;
-    _mqttReconnectionAttemptDelay = 15 * 1000;
+    _mqttRetry.cancel();
+    _accessTokenRetry.cancel();
+    _mqttReconnectionAttemptDelay = 30 * 1000;
+    _mqttFixedReconnectionDelay = false;
     _accessTokenFetchAttemptDelay = 10 * 1000;
     _mqttLastWillTopic = 0;
     _mqttLastWillMessage = 0;
@@ -243,7 +248,7 @@ void ThingsCloudMQTT::setCustomerId(const String customerId)
     // Legacy SoftAP re-provisioning must refresh the current user even when a
     // certificate was already fetched during an earlier provisioning round.
     _accessTokenFetched = false;
-    _nextAccessTokenFetchAttemptMillis = 0;
+    _accessTokenRetry.cancel();
     if (_enableSerialLogs)
         Serial.println("Claim customer context updated");
 }
@@ -268,17 +273,18 @@ void ThingsCloudMQTT::loop()
     if (_claimJob || _claimRequired) return;
     if (_needFetchAccessToken && !_accessTokenFetched)
     {
-        if (_nextAccessTokenFetchAttemptMillis > 0 && millis() < _nextAccessTokenFetchAttemptMillis)
+        if (_accessTokenRetry.active && !_accessTokenRetry.due())
             return;
 
         bool ret = fetchDeviceAccessToken();
         if (ret)
         {
             _accessTokenFetched = true;
+            _accessTokenRetry.cancel();
         }
         else
         {
-            _nextAccessTokenFetchAttemptMillis = millis() + _accessTokenFetchAttemptDelay;
+            _accessTokenRetry.schedule(_accessTokenFetchAttemptDelay);
             return;
         }
     }
@@ -298,7 +304,7 @@ bool ThingsCloudMQTT::handleWiFi()
     if (_handleWiFi && !_wifiLoopStarted)
     {
         WiFi.disconnect(true);
-        _nextWifiConnectionAttemptMillis = millis() + 500;
+        _wifiRetry.schedule(500);
         _wifiLoopStarted = true;
         return true;
     }
@@ -320,8 +326,12 @@ bool ThingsCloudMQTT::handleWiFi()
         // Some people have reported instabilities when trying to connect to
         // the mqtt broker right after being connected to wifi.
         // This delay prevent these instabilities.
-        _nextMqttConnectionAttemptMillis = millis() + 500;
-        _nextAccessTokenFetchAttemptMillis = millis() + 500;
+        // WiFi recovery must not reset MQTT failures or bypass its backoff.
+        if (_failedMQTTConnectionAttemptCount || _connectionEstablishedCount)
+            scheduleMqttRetry();
+        else
+            _mqttRetry.schedule(500);
+        _accessTokenRetry.schedule(500);
     }
 
     // Connection in progress
@@ -333,7 +343,7 @@ bool ThingsCloudMQTT::handleWiFi()
                 Serial.printf("WiFi! Connection attempt failed, delay expired. (%fs). \n", millis() / 1000.0);
 
             WiFi.disconnect(true);
-            _nextWifiConnectionAttemptMillis = millis() + 500;
+            _wifiRetry.schedule(500);
             _connectingToWifi = false;
         }
     }
@@ -345,7 +355,7 @@ bool ThingsCloudMQTT::handleWiFi()
         onWiFiConnectionLost();
 
         if (_handleWiFi)
-            _nextWifiConnectionAttemptMillis = millis() + 500;
+            _wifiRetry.schedule(500);
     }
 
     // Connected since at least one loop() call
@@ -355,10 +365,10 @@ bool ThingsCloudMQTT::handleWiFi()
 
     // Disconnected since at least one loop() call
     // Then, if we handle the wifi reconnection process and the waiting delay has expired, we connect to wifi
-    else if (_handleWiFi && _nextWifiConnectionAttemptMillis > 0 && millis() >= _nextWifiConnectionAttemptMillis)
+    else if (_handleWiFi && _wifiRetry.due())
     {
         connectToWifi();
-        _nextWifiConnectionAttemptMillis = 0;
+        _wifiRetry.cancel();
         _connectingToWifi = true;
         _lastWifiConnectiomAttemptMillis = millis();
     }
@@ -366,6 +376,37 @@ bool ThingsCloudMQTT::handleWiFi()
     /**** Detect and return if there was a change in the WiFi state ****/
 
     return stateChanged;
+}
+
+uint32_t ThingsCloudMQTT::mqttRetryDelay() const
+{
+    uint32_t base = _mqttReconnectionAttemptDelay;
+    if (!_mqttFixedReconnectionDelay)
+    {
+        if (_failedMQTTConnectionAttemptCount >= 10)
+            base = 120000;
+        else if (_failedMQTTConnectionAttemptCount >= 5)
+            base = 60000;
+    }
+    // Never overflow even when an application supplies a very large delay.
+    const uint32_t headroom = std::numeric_limits<uint32_t>::max() - base;
+    const uint32_t jitterLimit = base / 5 < headroom ? base / 5 : headroom;
+#if defined(ARDUINO_ARCH_ESP32)
+    const uint32_t noise = esp_random();
+#elif defined(ARDUINO_ARCH_ESP8266)
+    const uint32_t noise = os_random();
+#else
+    const uint32_t noise = static_cast<uint32_t>(random(static_cast<long>(jitterLimit) + 1));
+#endif
+    return base + noise % (jitterLimit + 1);
+}
+
+void ThingsCloudMQTT::scheduleMqttRetry()
+{
+    _mqttRetry.schedule(mqttRetryDelay());
+    if (_enableSerialLogs)
+        Serial.printf("MQTT: Retrying in %lu ms after %u consecutive failures.\n",
+                      static_cast<unsigned long>(_mqttRetry.delayMillis), _failedMQTTConnectionAttemptCount);
 }
 
 bool ThingsCloudMQTT::handleMQTT()
@@ -382,6 +423,8 @@ bool ThingsCloudMQTT::handleMQTT()
     if (isMqttConnected && !_mqttConnected)
     {
         _mqttConnected = true;
+        _failedMQTTConnectionAttemptCount = 0;
+        _mqttRetry.cancel();
         onMQTTConnectionEstablished();
     }
 
@@ -390,41 +433,40 @@ bool ThingsCloudMQTT::handleMQTT()
     {
         _mqttConnected = false;
         onMQTTConnectionLost();
-        _nextMqttConnectionAttemptMillis = millis() + _mqttReconnectionAttemptDelay;
+        scheduleMqttRetry();
     }
 
     // It's time to  connect to the MQTT broker
-    else if (isWifiConnected() && _nextMqttConnectionAttemptMillis > 0 && millis() >= _nextMqttConnectionAttemptMillis)
+    else if (!isMqttConnected && isWifiConnected() && _mqttRetry.due())
     {
         // Connect to MQTT broker
         if (connectToMqttBroker())
         {
             _failedMQTTConnectionAttemptCount = 0;
-            _nextMqttConnectionAttemptMillis = 0;
+            _mqttRetry.cancel();
         }
         else
         {
             // Connection failed, plan another connection attempt
-            _nextMqttConnectionAttemptMillis = millis() + _mqttReconnectionAttemptDelay;
             _mqttClient.disconnect();
-            _failedMQTTConnectionAttemptCount++;
+            if (_failedMQTTConnectionAttemptCount < std::numeric_limits<unsigned int>::max())
+                _failedMQTTConnectionAttemptCount++;
+            scheduleMqttRetry();
 
             if (_enableSerialLogs)
-                Serial.printf("MQTT!: Failed MQTT connection count: %i \n", _failedMQTTConnectionAttemptCount);
+                Serial.printf("MQTT!: Failed MQTT connection count: %u \n", _failedMQTTConnectionAttemptCount);
 
             // When there is too many failed attempt, sometimes it help to reset the WiFi connection or to restart the board.
-            if (_handleWiFi && _failedMQTTConnectionAttemptCount == 8)
+            if (_handleWiFi && _failedMQTTConnectionAttemptCount % 8 == 0 &&
+                (!_drasticResetOnConnectionFailures || _failedMQTTConnectionAttemptCount == 8))
             {
                 if (_enableSerialLogs)
                     Serial.println("MQTT!: Can't connect to broker after too many attempt, resetting WiFi ...");
 
                 WiFi.disconnect(true);
-                _nextWifiConnectionAttemptMillis = millis() + 500;
-
-                if (!_drasticResetOnConnectionFailures)
-                    _failedMQTTConnectionAttemptCount = 0;
+                _wifiRetry.schedule(500);
             }
-            else if (_drasticResetOnConnectionFailures && _failedMQTTConnectionAttemptCount == 12) // Will reset after 12 failed attempt (3 minutes of retry)
+            else if (_drasticResetOnConnectionFailures && _failedMQTTConnectionAttemptCount == 12)
             {
                 if (_enableSerialLogs)
                     Serial.println("MQTT!: Can't connect to broker after too many attempt, resetting board ...");
@@ -477,6 +519,7 @@ void ThingsCloudMQTT::onWiFiConnectionLost()
         _mqttConnected = false;
         _mqttClient.disconnect();
         onMQTTConnectionLost();
+        scheduleMqttRetry();
     }
 
     if (_onWifiDisconnect)
@@ -497,7 +540,6 @@ void ThingsCloudMQTT::onMQTTConnectionLost()
     if (_enableSerialLogs)
     {
         Serial.printf("MQTT! Lost connection (%fs). \n", millis() / 1000.0);
-        Serial.printf("MQTT: Retrying to connect in %i seconds. \n", _mqttReconnectionAttemptDelay / 1000);
     }
 
     if (_onMQTTDisconnect)
@@ -849,7 +891,6 @@ bool ThingsCloudMQTT::connectToMqttBroker()
                 break;
             }
 
-            Serial.printf("MQTT: Retrying to connect in %i seconds.\n", _mqttReconnectionAttemptDelay / 1000);
         }
     }
 
@@ -1069,7 +1110,9 @@ TCProvResult ThingsCloudMQTT::setMQTTEndpoint(const String& endpoint) {
     if(!tcParseEndpoint(endpoint,true,_allowPlaintext,host,port))return {TCProvResultCode::InvalidArgument};
     _mqttClient.disconnect();_mqttConnected=false;
     _projectMQTTEndpoint=endpoint;_mqttHostOwned=host;_mqttHost=_mqttHostOwned.c_str();_mqttServerPort=port;
-    _boundedProvisioningMQTT=true;_nextMqttConnectionAttemptMillis=millis()+500;return {TCProvResultCode::Ok};
+    _boundedProvisioningMQTT=true;
+    if(!_mqttRetry.active)_mqttRetry.schedule(_failedMQTTConnectionAttemptCount?mqttRetryDelay():500);
+    return {TCProvResultCode::Ok};
 }
 bool ThingsCloudMQTT::configureMQTTTransport() {
     if(_provisioningMode==TCProvisioningMode::Manufacturer&&
