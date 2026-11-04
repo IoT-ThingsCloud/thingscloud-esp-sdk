@@ -80,6 +80,17 @@ boolean ThingsCloudWiFiManager::autoConnect()
 #ifdef WM_DEBUG_LEVEL
     DEBUG_WM(F("AutoConnect"));
 #endif
+#ifdef ESP32
+    // esp_wifi_get_config() requires an initialized WiFi driver. Initialize
+    // STA before checking saved settings, including manufacturer recovery.
+    if (!WiFi.enableSTA(true))
+    {
+#ifdef WM_DEBUG_LEVEL
+        DEBUG_WM(DEBUG_ERROR, F("[FATAL] Unable to enable wifi!"));
+#endif
+        return false;
+    }
+#endif
     bool useSavedWiFi=getWiFiIsSaved();
     if(useSavedWiFi&&_mqttClient&&_mqttClient->provisioningMode()==TCProvisioningMode::Manufacturer&&
        !_mqttClient->restoreManufacturerCredentials()) {
@@ -2609,9 +2620,12 @@ String ThingsCloudWiFiManager::WiFi_SSID(bool persistent) const
 #elif defined(ESP32)
     if (persistent)
     {
-        wifi_config_t conf;
-        esp_wifi_get_config(WIFI_IF_STA, &conf);
-        return String(reinterpret_cast<const char *>(conf.sta.ssid));
+        wifi_config_t conf = {};
+        if (esp_wifi_get_config(WIFI_IF_STA, &conf) != ESP_OK)
+            return String();
+        char ssid[33] = {};
+        memcpy(ssid, conf.sta.ssid, sizeof(conf.sta.ssid));
+        return String(ssid);
     }
     else
     {
@@ -2619,10 +2633,12 @@ String ThingsCloudWiFiManager::WiFi_SSID(bool persistent) const
         {
             return String();
         }
-        wifi_ap_record_t info;
+        wifi_ap_record_t info = {};
         if (!esp_wifi_sta_get_ap_info(&info))
         {
-            return String(reinterpret_cast<char *>(info.ssid));
+            char ssid[33] = {};
+            memcpy(ssid, info.ssid, sizeof(info.ssid));
+            return String(ssid);
         }
         return String();
     }
@@ -2650,9 +2666,12 @@ String ThingsCloudWiFiManager::WiFi_psk(bool persistent) const
     {
         return String();
     }
-    wifi_config_t conf;
-    esp_wifi_get_config(WIFI_IF_STA, &conf);
-    return String(reinterpret_cast<char *>(conf.sta.password));
+    wifi_config_t conf = {};
+    if (esp_wifi_get_config(WIFI_IF_STA, &conf) != ESP_OK)
+        return String();
+    char password[65] = {};
+    memcpy(password, conf.sta.password, sizeof(conf.sta.password));
+    return String(password);
 #endif
 }
 
