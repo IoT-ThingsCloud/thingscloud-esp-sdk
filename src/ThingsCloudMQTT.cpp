@@ -207,10 +207,15 @@ bool ThingsCloudMQTT::fetchDeviceAccessToken()
     String response = http.getString();
     http.end();
     // Ignore unrelated device metadata when allocating the certificate document.
+#if ARDUINOJSON_VERSION_MAJOR >= 7
+    JsonDocument filter;
+    JsonDocument doc;
+#else
     StaticJsonDocument<128> filter;
+    DynamicJsonDocument doc(response.length() + JSON_OBJECT_SIZE(2) + JSON_OBJECT_SIZE(1) + 1);
+#endif
     filter["result"] = true;
     filter["device"]["access_token"] = true;
-    DynamicJsonDocument doc(response.length() + JSON_OBJECT_SIZE(2) + JSON_OBJECT_SIZE(1) + 1);
     DeserializationError error = deserializeJson(doc, response, DeserializationOption::Filter(filter));
     if (error || !doc["result"].is<int>() || doc["result"].as<int>() != 1 ||
         !doc["device"]["access_token"].is<const char *>())
@@ -944,19 +949,28 @@ void ThingsCloudMQTT::mqttMessageReceivedCallback(char *topic, uint8_t *payload,
             }
             if (record.callbackJSON || record.callbackJSONWithTopic)
             {
+#if ARDUINOJSON_VERSION_MAJOR < 7
                 // Grow only when ArduinoJson needs more slots. A JSON array of
                 // one-character values bounds the number of slots for this input.
                 const size_t maxCapacity = JSON_ARRAY_SIZE(length / 2 + 1) + length + 1;
                 size_t capacity = length + JSON_OBJECT_SIZE(8);
+#endif
                 while (true)
                 {
+#if ARDUINOJSON_VERSION_MAJOR >= 7
+                    // ArduinoJson 7 grows automatically; retrying cannot fix OOM.
+                    JsonDocument doc;
+#else
                     DynamicJsonDocument doc(capacity);
+#endif
                     DeserializationError error = deserializeJson(doc, payloadStr);
+#if ARDUINOJSON_VERSION_MAJOR < 7
                     if (error == DeserializationError::NoMemory && doc.capacity() > 0 && capacity < maxCapacity)
                     {
                         capacity = capacity > maxCapacity / 2 ? maxCapacity : capacity * 2;
                         continue;
                     }
+#endif
                     if (error || !doc.is<JsonObject>())
                     {
                         if (_enableSerialLogs)

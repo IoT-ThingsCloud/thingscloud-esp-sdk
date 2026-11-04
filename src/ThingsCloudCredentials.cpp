@@ -184,9 +184,13 @@ void tcRunCredentialJob(TCCredentialJob* j) {
             String payload;
             bool encoded;
             {
+#if ARDUINOJSON_VERSION_MAJOR >= 7
+                JsonDocument body;
+#else
                 size_t capacity=JSON_OBJECT_SIZE(3)+j->deviceKey.length()+j->productKey.length()+
                     (manufacturer?j->context.provisioning_token.length():j->context.customer_id.length())+3;
                 DynamicJsonDocument body(capacity);
+#endif
                 body["device_key"]=j->deviceKey;
                 if(manufacturer) {body["product_key"]=j->productKey;body["provisioning_token"]=j->context.provisioning_token;}
                 else {body["type_key"]=j->productKey;body["customer_id"]=j->context.customer_id;}
