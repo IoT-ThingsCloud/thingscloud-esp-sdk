@@ -3,11 +3,18 @@
  * 适用芯片：ESP8266、ESP32（经典系列）、ESP32-S2、ESP32-S3、ESP32-C3、ESP32-C5、ESP32-C6。
  * 补充说明：ESP32-C2、ESP32-C61需额外的Arduino-ESP32构建支持，本示例暂未验证。
  * 不适用：ESP32-H2、ESP32-P4（无片上WiFi，本示例不包含外接无线芯片方案）。
+ * ESP8266 / ESP8285 存储要求：平台接入凭据保存到 LittleFS，须选择带文件系统空间且与实际 Flash 容量匹配的布局，
+ * 如 ESP8266 4MB 的 4M1M、ESP8285 1MB 的 1M64；WiFi 名称和密码由底层 WiFi SDK 持久保存，无需 LittleFS。
+ * 本示例在配网前优先挂载已有 LittleFS，仅在挂载失败且确认整个分区全为 0xFF 时执行首次格式化。
+ * 未配置文件系统空间、读取失败或挂载失败且已有数据时，会输出错误并停止配网；请核查分区布局和已有数据。
  */
 
 #include <ThingsCloudWiFiManager.h>
 #include <ThingsCloudMQTT.h>
 #include "ProvisioningButton.h"
+#if defined(ESP8266)
+#include "ProvisioningStorage.h"
+#endif
 
 // 按键配置：内部上拉输入（INPUT_PULLUP），低电平有效。
 // 接线方式：常开瞬时按键一端接此 GPIO，另一端接 GND。
@@ -42,6 +49,16 @@ void resetProvisioning();
 void setup()
 {
     Serial.begin(115200);
+
+#if defined(ESP8266)
+    // ESP8266 / ESP8285：已有文件系统直接复用，仅空白分区允许首次格式化。
+    if (!prepareProvisioningStorage())
+    {
+        Serial.println("LittleFS initialization failed; check filesystem partition/data. Provisioning stopped.");
+        while (true)
+            delay(1000);
+    }
+#endif
 
     if (!resetButton.begin(BUTTON_PIN))
     {
