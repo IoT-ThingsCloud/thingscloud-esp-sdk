@@ -5,7 +5,7 @@
 ## 硬件与依赖
 
 - ESP8266 Arduino core 3.1.2，Generic ESP8266 Module，4MB Flash / 1MB LittleFS；更改分区前需制定数据迁移方案。
-- ThingsCloud ESP SDK 1.0.17 或后续兼容版本、ArduinoJson 6.21.5、PubSubClient 2.8；SoftwareSerial 和 LittleFS 由 ESP8266 core 提供。
+- ThingsCloud ESP SDK 1.0.18 或后续兼容版本、ArduinoJson 6.21.5、PubSubClient 2.8；SoftwareSerial 和 LittleFS 由 ESP8266 core 提供。
 - 继电器 GPIO4，高电平吸合；按键 GPIO12，INPUT_PULLUP，按下接地；LED GPIO13，高电平点亮。其他板型需核对引脚和极性。
 - HLW8032 通过 GPIO3/RXD 输入 4800 baud、8E1、24 字节 UART 帧。串口仅用 TX 输出 115200 调试日志，GPIO3 留给计量芯片。
 - 继电器和计量芯片在仅 USB/3.3V 供电时可能无法完整工作；烧录与串口调试必须断开市电。
