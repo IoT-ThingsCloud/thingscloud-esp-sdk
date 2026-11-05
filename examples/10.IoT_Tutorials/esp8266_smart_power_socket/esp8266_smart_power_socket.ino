@@ -90,6 +90,7 @@ ReportKind pendingKind = ReportKind::NONE;
 TCManufacturerConfig manufacturerConfig = {"", THINGSCLOUD_PRODUCT_KEY};
 ThingsCloudMQTT client(manufacturerConfig);
 ThingsCloudWiFiManager wm(WIFI_AP_PREFIX, WIFI_AP_PASSWORD);
+bool provisioningReady = false;
 bool switchOn = false, dirty = false, synchronized = false;
 bool pendingGet = false, pendingReport = false;
 uint32_t lastGet = 0, lastReportAttempt = 0;
@@ -440,6 +441,12 @@ void setup()
     configTime(0, 0, "ntp.aliyun.com", "pool.ntp.org", "time.cloudflare.com");
     wm.setDebugOutput(false);
     wm.linkMQTTClient(&client);
+    wm.setSaveConfigCallback(
+        []()
+        {
+            Serial.printf("WiFi save callback: status=%d IP=%s heap=%u largest=%u\n", int(WiFi.status()),
+                          WiFi.localIP().toString().c_str(), ESP.getFreeHeap(), ESP.getMaxFreeBlockSize());
+        });
     wm.setConfigPortalBlocking(false);
     wm.setConfigPortalTimeout(0);
     wm.setConnectTimeout(15);
@@ -450,8 +457,19 @@ void setup()
             Serial.println("Soft AP ready: " + manager->getConfigPortalSSID());
             Serial.println("Use ThingsX App WiFi provisioning; short press switches, hold 5s resets WiFi");
         });
-    // Only missing WiFi opens provisioning; saved networks retry in the background.
-    if (!wm.begin()) Serial.println("WiFi manager initialization failed");
+    // 与 SDK 厂商配网示例一致：已有 WiFi 配置时后台连接，路由器暂未就绪时由 SDK 退避重试。
+    // begin() 成功只表示初始化完成，不表示 WiFi 已连接；不能因离线而清除配置或打开配网热点。
+    if (!restored)
+    {
+        Serial.println("WiFi manager not started: filesystem/energy storage initialization failed");
+        return;
+    }
+    if (!wm.begin())
+    {
+        Serial.println("WiFi manager initialization failed; provisioning stopped");
+        return;
+    }
+    provisioningReady = true;
 }
 
 void handleButton()
@@ -495,9 +513,14 @@ void handleButton()
 void loop()
 {
     pollMeter();
-    wm.process();
-    if (!wm.getConfigPortalActive())
-        client.loop();
+    // 在线、离线、配网期间都持续驱动 SDK，维护连接超时和后台重试。
+    // 初始化失败时仍继续处理本地按键、计量和累计电量保存。
+    if (provisioningReady)
+    {
+        wm.process();
+        if (!wm.getConfigPortalActive())
+            client.loop();
+    }
     pollMeter();
     handleButton();
     if (millis() - energySavedAt >= 60000)
@@ -512,6 +535,8 @@ void loop()
         statusAt = millis();
         Serial.printf("Connection status: wifi=%d mqtt=%d synced=%d heap=%u\n", int(WiFi.status()),
                       client.isConnected(), synchronized, ESP.getFreeHeap());
+        Serial.printf("Provisioning status: ms=%lu portal=%d ready=%d largest=%u\n", (unsigned long)millis(),
+                      wm.getConfigPortalActive(), provisioningReady, ESP.getMaxFreeBlockSize());
     }
     static bool wifiWasUp = false;
     bool wifiUp = WiFi.status() == WL_CONNECTED;
