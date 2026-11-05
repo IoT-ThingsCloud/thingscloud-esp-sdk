@@ -70,4 +70,4 @@
 
 - 首次发布，提供 WiFi 联网、MQTT 通信和 SoftAP 配网基础功能。
 
-历史条目根据 [GitHub 发布记录](https://github.com/IoT-ThingsCloud/thingscloud-esp-sdk/releases)及[提交记录](https://github.com/IoT-ThingsCloud/thingscloud-esp-sdk/commits/main/)概括整理；历史日期采用 Release 发布时间（北京时间）。
+
