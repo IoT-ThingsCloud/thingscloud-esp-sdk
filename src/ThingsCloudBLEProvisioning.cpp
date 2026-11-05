@@ -1,6 +1,7 @@
 #define THINGSCLOUD_BLE_IMPLEMENTATION
 #include "ThingsCloudBLEProvisioning.h"
 #include "ThingsCloudProvisioningProtocol.h"
+#include "ThingsCloudWiFiRetry.h"
 #if TC_HAS_BLE_PROVISIONING
 #include "internal/nimble/NimBLEDevice.h"
 #include <protocomm.h>
@@ -57,7 +58,9 @@ struct ThingsCloudBLEProvisioning::Impl : NimBLEServerCallbacks {
     bool wifiRetryPending=false,recoveryInProgress=false,wifiFailed=false;
     network_prov_wifi_sta_fail_reason_t wifiFailureReason=NETWORK_PROV_WIFI_STA_AUTH_ERROR;
     wifi_config_t pendingWifi={};
-    uint32_t windowStart=0,applyStart=0,connectStart=0,finishStart=0,lastReconnect=0,generation=0,associationGeneration=0;
+    uint32_t windowStart=0,applyStart=0,connectStart=0,finishStart=0,generation=0,associationGeneration=0;
+    TCWiFiRetry wifiRetry;
+    bool wifiAutoReconnect=true;
     int32_t connection=-1;
     String appliedSSID;
     TCProvState current=TCProvState::Idle;
@@ -76,6 +79,15 @@ struct ThingsCloudBLEProvisioning::Impl : NimBLEServerCallbacks {
         {this,"prov-config",0xff52},{this,"proto-ver",0xff53},
         {this,"tc-device-info",0xff54},{this,"tc-claim-context",0xff55}};
     ~Impl(){if(mutex)vSemaphoreDelete(mutex);if(transportMutex)vSemaphoreDelete(transportMutex);}
+    void maintainSavedWiFi() {
+        if(!wifiAutoReconnect||running||pendingStop)return;
+        wifi_config_t cfg={};
+        if(esp_wifi_get_config(WIFI_IF_STA,&cfg)==ESP_OK&&cfg.sta.ssid[0]) {
+            const auto action=wifiRetry.update(millis(),WiFi.status()==WL_CONNECTED);
+            if(action==TCWiFiRetry::Action::Disconnect)esp_wifi_disconnect();
+            else if(action==TCWiFiRetry::Action::Connect)WiFi.reconnect();
+        } else wifiRetry.reset();
+    }
     bool windowExpired(uint32_t now) const {
         return options.provisioning_window_ms != 0 &&
             (uint32_t)(now-windowStart) >= options.provisioning_window_ms;
@@ -287,6 +299,7 @@ struct ThingsCloudBLEProvisioning::Impl : NimBLEServerCallbacks {
         if((WiFi.getMode()&WIFI_AP)||NimBLEDevice::isInitialized()) {
             tcReleaseProvisioningTransport(this);return {TCProvResultCode::Busy};
         }
+        wifiRetry.reset();
         WiFi.setAutoReconnect(false);
         if(!WiFi.mode(WIFI_STA)){tcReleaseProvisioningTransport(this);return {TCProvResultCode::InternalError};}
         {Guard lock(mutex);session->clear();running=true;stopping=false;registered=false;terminal=false;recoverWifi=false;wifiFresh=false;
@@ -373,15 +386,26 @@ TCProvResult ThingsCloudBLEProvisioning::begin(ThingsCloudMQTT& client,const Thi
     p->client=&client;p->options=o;
     WiFi.mode(WIFI_STA);WiFi.setAutoReconnect(false);
     wifi_config_t cfg={};if(esp_wifi_get_config(WIFI_IF_STA,&cfg)!=ESP_OK)return {TCProvResultCode::InternalError};
-    if(cfg.sta.ssid[0]&&o.provisioning_mode==TCProvisioningMode::Manufacturer&&!client.restoreManufacturerCredentials()) {
-        // A power loss after WiFi save but before certificate completion leaves
-        // no usable platform record. Recover into provisioning, not dead WiFi.
-        client.setClaimRegistrationRequired(true);wifi_config_t empty={};
-        if(esp_wifi_set_storage(WIFI_STORAGE_FLASH)!=ESP_OK||esp_wifi_set_config(WIFI_IF_STA,&empty)!=ESP_OK)
+    p->wifiRetry.reset();
+    p->wifiRetry.seed((uint32_t)random(1, 0x7fffffff));
+    if(cfg.sta.ssid[0]&&o.provisioning_mode==TCProvisioningMode::Manufacturer&&
+       !client.restoreManufacturerCredentials()) {
+        // Preserve the original recovery: only a new provisioning transaction
+        // can obtain platform credentials for this manufacturer device.
+        client.setClaimRegistrationRequired(true);
+        wifi_config_t empty={};
+        esp_wifi_disconnect();
+        if(esp_wifi_set_storage(WIFI_STORAGE_FLASH)!=ESP_OK||
+           esp_wifi_set_config(WIFI_IF_STA,&empty)!=ESP_OK)
             return {TCProvResultCode::InternalError};
         cfg=empty;
     }
-    if(cfg.sta.ssid[0]) {WiFi.begin();return {TCProvResultCode::Ok};}
+    if(cfg.sta.ssid[0]) {
+        WiFi.persistent(false);
+        WiFi.begin();
+        p->wifiRetry.started(millis());
+        return {TCProvResultCode::Ok};
+    }
     if(o.auto_start_if_unprovisioned)return p->launch(true);
     return {TCProvResultCode::Ok};
 }
@@ -468,14 +492,21 @@ void ThingsCloudBLEProvisioning::loop() {
     }
     if(timeout||finish)p->shutdown(true);
     if(restart) {p->shutdown(false);if(!p->windowExpired(millis()))p->launch(false);}
-    if(!p->running&&!p->pendingStop&&WiFi.status()!=WL_CONNECTED&&(uint32_t)(millis()-p->lastReconnect)>=10000) {p->lastReconnect=millis();wifi_config_t cfg={};if(esp_wifi_get_config(WIFI_IF_STA,&cfg)==ESP_OK&&cfg.sta.ssid[0])WiFi.reconnect();}
+    p->maintainSavedWiFi();
     p->dispatchEvents();
+}
+void ThingsCloudBLEProvisioning::setWiFiAutoReconnect(bool enabled) {
+    auto* p=_impl;
+    if(p->wifiAutoReconnect==enabled)return;
+    p->wifiAutoReconnect=enabled;
+    p->wifiRetry.reset(); // A new owner never inherits an overdue retry timer.
+    if(enabled&&p->client)WiFi.setAutoReconnect(false);
 }
 void ThingsCloudBLEProvisioning::stop(){if(state()==TCProvState::Stopped)return;if(_impl->client&&!_impl->shutdown(true))return;Guard lock(_impl->mutex);_impl->current=TCProvState::Stopped;_impl->emit(TCProvEventType::Stopped);}
 TCProvState ThingsCloudBLEProvisioning::state() const {Guard lock(_impl->mutex);return _impl->current;}
 TCProvisioningMode ThingsCloudBLEProvisioning::provisioningMode() const {return _impl->options.provisioning_mode;}
 void ThingsCloudBLEProvisioning::onEvent(TCProvEventCallback cb){_impl->callback=cb;}
-void ThingsCloudBLEProvisioning::resetWifi(){stop();WiFi.disconnect(false,true);}
+void ThingsCloudBLEProvisioning::resetWifi(){stop();_impl->wifiRetry.reset();WiFi.disconnect(false,true);}
 #else
 struct ThingsCloudBLEProvisioning::Impl {TCProvEventCallback callback;};
 ThingsCloudBLEProvisioning::ThingsCloudBLEProvisioning():_impl(new Impl()){}
@@ -483,6 +514,7 @@ ThingsCloudBLEProvisioning::~ThingsCloudBLEProvisioning(){delete _impl;}
 TCProvResult ThingsCloudBLEProvisioning::begin(ThingsCloudMQTT&,const ThingsCloudBLEProvisioningOptions&){return {TCProvResultCode::Unsupported};}
 TCProvResult ThingsCloudBLEProvisioning::start(){return {TCProvResultCode::Unsupported};}
 void ThingsCloudBLEProvisioning::loop(){}
+void ThingsCloudBLEProvisioning::setWiFiAutoReconnect(bool){}
 void ThingsCloudBLEProvisioning::stop(){}
 TCProvState ThingsCloudBLEProvisioning::state() const{return TCProvState::Idle;}
 TCProvisioningMode ThingsCloudBLEProvisioning::provisioningMode() const{return TCProvisioningMode::Project;}

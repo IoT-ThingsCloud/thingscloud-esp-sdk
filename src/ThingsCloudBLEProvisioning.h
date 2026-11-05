@@ -25,9 +25,16 @@ public:
     ThingsCloudBLEProvisioning(const ThingsCloudBLEProvisioning&) = delete;
     ThingsCloudBLEProvisioning& operator=(const ThingsCloudBLEProvisioning&) = delete;
     static bool supported() { return TC_HAS_BLE_PROVISIONING; }
+    // Saved WiFi connects in the background. Network failures retry; invalid
+    // manufacturer credentials clear WiFi and require provisioning again.
     TCProvResult begin(ThingsCloudMQTT& client, const ThingsCloudBLEProvisioningOptions& options);
     TCProvResult start();
+    // Call every application loop, online and offline, to maintain WiFi retries.
     void loop();
+    // Default true. Controls saved-network recovery only; the first connection
+    // and active provisioning transactions retain their own connection logic.
+    // Can be set before begin() or from the same application loop as loop().
+    void setWiFiAutoReconnect(bool enabled);
     void stop();
     TCProvState state() const;
     TCProvisioningMode provisioningMode() const;

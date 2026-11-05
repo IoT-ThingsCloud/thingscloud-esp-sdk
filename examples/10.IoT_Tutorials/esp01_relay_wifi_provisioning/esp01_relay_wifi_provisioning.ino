@@ -57,10 +57,10 @@ void setup() {
 
   // 如果设备未配网，则启动 AP 配网模式，等待 ThingsX App 为设备配网
   // 如果已配网，则直接连接 WiFi
-  if (!wm.autoConnect()) {
-    Serial.println("\nWiFi provisioning failed, will restart to retry");
-    delay(1000);
-    ESP.restart();
+  wm.setConfigPortalBlocking(false);
+  wm.setConfigPortalTimeout(0);
+  if (!wm.begin()) {
+    Serial.println("WiFi manager initialization failed");
   }
 }
 
@@ -147,7 +147,8 @@ void onMQTTConnect() {
 }
 
 void loop() {
-  client.loop();
+  wm.process(); // Maintain saved WiFi recovery, including while offline.
+  if (!wm.getConfigPortalActive()) client.loop();
 
   // 检查是否有延迟任务需要执行
   if (delayTask.active) {

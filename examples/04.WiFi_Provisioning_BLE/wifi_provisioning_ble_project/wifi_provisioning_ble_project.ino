@@ -81,7 +81,8 @@ void setup()
     // 0 表示无限等待用户配网；单次握手、联网和取证仍保留超时保护。
     options.provisioning_window_ms = 0;
 
-    // 未配网时启动蓝牙配网，已配网时直接连接 WiFi。
+    // 无配置时启动蓝牙配网；已有 WiFi 时后台连接，离线不会重新配网。
+    // begin() 返回初始化结果，不表示 WiFi 已连接。
     auto result = provisioning.begin(client, options);
     if (!result.ok())
     {
@@ -132,6 +133,8 @@ void loop()
         return;
     }
 
+    // 在线、离线、配网期间都必须调用，SDK 维护超时和退避重连。
+    // 连接失败后等待 5/10/20/30 秒并随机错峰，持续重试直至恢复。
     provisioning.loop();
     client.loop();
 

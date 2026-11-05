@@ -36,6 +36,7 @@ ThingsCloudMQTT client(
 #define WiFi_AP_SSID "ESP32_DEVICE" // AP 的 SSID 前缀，出现在用户 App 的 WiFi 列表中，可修改为你喜欢的名称
 #define WiFi_AP_PASSWORD ""         // AP 的连接密码，可以不设置
 ThingsCloudWiFiManager wm(WiFi_AP_SSID, WiFi_AP_PASSWORD);
+bool provisioningReady = false;
 
 // 设置 LED GPIO 引脚
 const int LED_PIN = 2;
@@ -71,19 +72,20 @@ void setup()
 
     // 使用非阻塞门户，等待配网时也能响应长按按键。
     wm.setConfigPortalBlocking(false);
+    wm.setConfigPortalTimeout(0); // 未配网时无限等待用户配网。
 
     // 调试配网可以取消以下注释，用于清空之前保存的 WiFi 配网信息，每次设备开机都需要重新配网。
     // 实际产品中，将清空配网信息放在例如设备的按键事件中，由用户操作触发设备重新进入配网状态。
     // wm.resetSettings();
 
-    // 如果设备未配网，则启动 AP 配网模式，等待 ThingsX App 为设备配网
-    // 如果已配网，则直接连接 WiFi
-    if (!wm.autoConnect() && !wm.getConfigPortalActive())
+    // 无配置时启动 AP；已有 WiFi 时后台连接，离线不会重新配网。
+    // begin() 返回初始化结果，不表示 WiFi 已连接。
+    if (!wm.begin())
     {
-        Serial.println("\nWiFi provisioning failed, will restart to retry");
-        delay(1000);
-        ESP.restart();
+        Serial.println("WiFi manager initialization failed");
+        return;
     }
+    provisioningReady = true;
 }
 
 // 必须实现这个回调函数，当 MQTT 连接成功后执行该函数。
@@ -119,15 +121,16 @@ void loop()
         resetProvisioning();
         return;
     }
+    if (!provisioningReady)
+    {
+        delay(10);
+        return;
+    }
+
+    // 在线、离线、配网期间都必须调用，SDK 维护超时和退避重连。
+    wm.process();
     if (wm.getConfigPortalActive())
     {
-        const bool connected = wm.process();
-        if (!wm.getConfigPortalActive() && !connected)
-        {
-            Serial.println("WiFi provisioning failed, will restart to retry");
-            delay(1000);
-            ESP.restart();
-        }
         delay(2);
         return;
     }
@@ -135,7 +138,7 @@ void loop()
     client.loop();
 
     // 按间隔时间上报传感器数据
-    if (millis() - timer1 > report_interval)
+    if (client.isConnected() && millis() - timer1 >= report_interval)
     {
         timer1 = millis();
         pubSensors();

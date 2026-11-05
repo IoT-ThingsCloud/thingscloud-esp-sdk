@@ -351,11 +351,10 @@ void setup()
 
     // 如果设备未配网，则启动 AP 配网模式，等待 ThingsX App 为设备配网
     // 如果已配网，则直接连接 WiFi
-    if (!wm.autoConnect())
-    {
-        Serial.println("\nWiFi provisioning failed, will restart to retry");
-        delay(1000);
-        ESP.restart();
+    wm.setConfigPortalBlocking(false);
+    wm.setConfigPortalTimeout(0);
+    if (!wm.begin()) {
+        Serial.println("WiFi manager initialization failed");
     }
 
     Serial.println();
@@ -433,25 +432,14 @@ void setup()
 void loop()
 {
     // MQTT 主循环（处理 WiFi / MQTT 连接、消息收发）
-    client.loop();
+    wm.process(); // Maintain saved WiFi recovery, including while offline.
+    if (!wm.getConfigPortalActive()) client.loop();
 
     // 如果摄像头未初始化，跳过按键检测
     if (!camera_initialized)
     {
         delay(100);
         return;
-    }
-
-    // WiFi 断线时尝试重连（保持和原始代码相同的逻辑）
-    if (WiFi.status() != WL_CONNECTED)
-    {
-        static unsigned long last_reconnect = 0;
-        if (millis() - last_reconnect > 10000)
-        {
-            Serial.println("[日志] WiFi 已断开，尝试重连...");
-            WiFi.reconnect();
-            last_reconnect = millis();
-        }
     }
 
     // 检测按键按下（低电平有效）

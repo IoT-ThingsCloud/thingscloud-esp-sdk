@@ -43,10 +43,14 @@ void ThingsCloudWiFiManager::WiFiManagerInit()
 // destructor
 ThingsCloudWiFiManager::~ThingsCloudWiFiManager()
 {
+    _wifiMaintenance.reset();
+    // Legacy sketches sometimes keep the manager local to setup(). Once its
+    // loop driver is gone, leave native recovery enabled for the saved network.
+    if (_maintainWiFi) WiFi.setAutoReconnect(_wifiAutoReconnect);
     _end();
 
 #ifdef ESP32
-    WiFi.removeEvent(wm_event_id);
+    if (_wifiEventsRegistered) WiFi.removeEvent(wm_event_id);
 #endif
 }
 
@@ -75,128 +79,114 @@ void ThingsCloudWiFiManager::_end()
  * @param  {[type]} char const         *apPassword [description]
  * @return {[type]}      [description]
  */
-boolean ThingsCloudWiFiManager::autoConnect()
+boolean ThingsCloudWiFiManager::begin()
 {
-#ifdef WM_DEBUG_LEVEL
-    DEBUG_WM(F("AutoConnect"));
-#endif
-#ifdef ESP32
-    // esp_wifi_get_config() requires an initialized WiFi driver. Initialize
-    // STA before checking saved settings, including manufacturer recovery.
-    if (!WiFi.enableSTA(true))
-    {
-#ifdef WM_DEBUG_LEVEL
-        DEBUG_WM(DEBUG_ERROR, F("[FATAL] Unable to enable wifi!"));
-#endif
+    if (configPortalActive) return true;
+    if (tcProvisioningTransportBusy()) return false;
+    if (_mqttClient && !_mqttClient->setWiFiMaintenance(_wifiMaintenance).ok())
         return false;
-    }
-#endif
-    bool useSavedWiFi=getWiFiIsSaved();
-    if(useSavedWiFi&&_mqttClient&&_mqttClient->provisioningMode()==TCProvisioningMode::Manufacturer&&
-       !_mqttClient->restoreManufacturerCredentials()) {
-        // Interrupted/invalid manufacturer registration must open provisioning
-        // again. Never connect a saved network using an incomplete identity.
+    _begin();
+    if (!WiFi.enableSTA(true)) return false;
+    _legacyCoreReconnect = false;
+    WiFi_autoReconnect();
+    _wifiRetry.reset();
+    _wifiRetry.seed((uint32_t)random(1, 0x7fffffff));
+    _maintainWiFi = false;
+    _usermode = WIFI_STA;
+    WiFiSetCountry();
+    if (_hostname != "") setupHostname(false);
+
+    bool useSavedWiFi = getWiFiIsSaved();
+    if (useSavedWiFi && _mqttClient &&
+        _mqttClient->provisioningMode() == TCProvisioningMode::Manufacturer &&
+        !_mqttClient->restoreManufacturerCredentials())
+    {
+        // A saved network without a usable platform identity must be provisioned
+        // again. This is distinct from a temporarily unreachable router.
         _mqttClient->setClaimRegistrationRequired(true);
 #ifdef ESP32
-        WiFi.disconnect(false,true);
+        wifi_config_t empty = {};
+        esp_wifi_disconnect();
+        if (esp_wifi_set_storage(WIFI_STORAGE_FLASH) != ESP_OK ||
+            esp_wifi_set_config(WIFI_IF_STA, &empty) != ESP_OK)
+            return false;
 #else
-        WiFi.persistent(true);WiFi.disconnect(true);WiFi.persistent(false);
+        WiFi.persistent(true);
+        const bool cleared = WiFi.disconnect(true);
+        WiFi.persistent(false);
+        if (!cleared) return false;
 #endif
-        useSavedWiFi=false;
+        useSavedWiFi = false;
+        DEBUG_WM(F("Platform credentials unavailable; saved WiFi cleared for provisioning"));
     }
     if (useSavedWiFi)
     {
-        _startconn = millis();
-        _begin();
+        setSTAConfig();
+        _maintainWiFi = true;
+        WiFi.persistent(false);
+        if (_defaultssid.length()) WiFi.begin(_defaultssid.c_str(), _defaultpass.c_str());
+        else WiFi.begin();
+        _wifiRetry.started(millis());
+        return true;
+    }
+    if (!_enableConfigPortal) return false;
+    const bool connected = startConfigPortal();
+    return connected || configPortalActive;
+}
 
-        // attempt to connect using saved settings, on fail fallback to AP config portal
-        if (!WiFi.enableSTA(true))
-        {
-// handle failure mode Brownout detector etc.
-#ifdef WM_DEBUG_LEVEL
-            DEBUG_WM(DEBUG_ERROR, F("[FATAL] Unable to enable wifi!"));
-#endif
-            return false;
-        }
+boolean ThingsCloudWiFiManager::autoConnect()
+{
+    if (!begin()) return false;
+    const uint32_t started = millis();
+    const uint32_t timeout = _connectTimeout ? _connectTimeout : 15000;
+    // Preserve the legacy successful-return contract. A temporarily missing
+    // router must not return false into old restart-on-failure branches.
+    while (_maintainWiFi && WiFi.status() != WL_CONNECTED &&
+           (_wifiAutoReconnect || (uint32_t)(millis() - started) < timeout))
+    {
+        process();
+        delay(2);
+    }
+    if (_maintainWiFi) processSavedWiFi();
+    // Standalone legacy users may have neither a linked client nor process().
+    // Keep the core's original recovery in that case; process() takes ownership
+    // back if the application later adopts explicit maintenance.
+    if (!_mqttClient && !configPortalActive) {
+        _legacyCoreReconnect = true;
+        WiFi.setAutoReconnect(_wifiAutoReconnect);
+    }
+    return WiFi.status() == WL_CONNECTED;
+}
 
-        WiFiSetCountry();
-
+void ThingsCloudWiFiManager::processSavedWiFi()
+{
+    if (!_maintainWiFi || configPortalActive) return;
+    if (_legacyCoreReconnect) {
+        WiFi.setAutoReconnect(false);
+        _legacyCoreReconnect = false;
+    }
+    // Automatic recovery can be explicitly disabled by the application.
+    if (!_wifiAutoReconnect && WiFi.status() != WL_CONNECTED) return;
+    if (!getWiFiIsSaved()) { _maintainWiFi = false; _wifiRetry.reset(); return; }
+    const uint32_t timeout = _connectTimeout ? _connectTimeout : 15000;
+    _lastconxresult = WiFi.status();
+    const auto action = _wifiRetry.update(millis(), _lastconxresult == WL_CONNECTED, timeout);
+    if (action == TCWiFiRetry::Action::Disconnect)
+    {
+        DEBUG_WM(F("Saved WiFi attempt timed out; waiting before retry"));
 #ifdef ESP32
-        if (esp32persistent)
-            WiFi.persistent(false); // disable persistent for esp32 after esp_wifi_start or else saves wont work
-#endif
-
-        _usermode = WIFI_STA; // When using autoconnect , assume the user wants sta mode on permanently.
-
-        // no getter for autoreconnectpolicy before this
-        // https://github.com/esp8266/Arduino/pull/4359
-        // so we must force it on else, if not connectimeout then waitforconnectionresult gets stuck endless loop
-        WiFi_autoReconnect();
-
-        // set hostname before stating
-        if (_hostname != "")
-        {
-            setupHostname(true);
-        }
-
-        // if already connected, or try stored connect
-        // @note @todo ESP32 has no autoconnect, so connectwifi will always be called unless user called begin etc before
-        // @todo check if correct ssid == saved ssid when already connected
-        bool connected = false;
-        if (WiFi.status() == WL_CONNECTED)
-        {
-            connected = true;
-#ifdef WM_DEBUG_LEVEL
-            DEBUG_WM(F("AutoConnect: ESP Already Connected"));
-#endif
-            setSTAConfig();
-            // @todo not sure if this check makes sense, causes dup setSTAConfig in connectwifi,
-            // and we have no idea WHAT we are connected to
-        }
-
-        if (connected || connectWifi(_defaultssid, _defaultpass) == WL_CONNECTED)
-        {
-// connected
-#ifdef WM_DEBUG_LEVEL
-            DEBUG_WM(F("AutoConnect: SUCCESS"));
-            DEBUG_WM(DEBUG_VERBOSE, F("Connected in"), (String)((millis() - _startconn)) + " ms");
-            DEBUG_WM(F("STA IP Address:"), WiFi.localIP());
-#endif
-            _lastconxresult = WL_CONNECTED;
-
-            if (_hostname != "")
-            {
-#ifdef WM_DEBUG_LEVEL
-                DEBUG_WM(DEBUG_DEV, F("hostname: STA: "), getWiFiHostname());
-#endif
-            }
-            return true; // connected success
-        }
-
-#ifdef WM_DEBUG_LEVEL
-        DEBUG_WM(F("AutoConnect: FAILED"));
+        esp_wifi_disconnect(); // Non-blocking; never erase credentials.
+#else
+        WiFi_Disconnect();
 #endif
     }
-    else
+    else if (action == TCWiFiRetry::Action::Connect)
     {
-#ifdef WM_DEBUG_LEVEL
-        DEBUG_WM(F("No Credentials are Saved, skipping connect"));
-#endif
+        DEBUG_WM(F("Connecting to saved WiFi (background)"));
+        WiFi_enableSTA(true);
+        // No delay, waitForConnectResult(), or flash write in the retry path.
+        WiFi.reconnect();
     }
-
-    // possibly skip the config portal
-    if (!_enableConfigPortal)
-    {
-#ifdef WM_DEBUG_LEVEL
-        DEBUG_WM(DEBUG_VERBOSE, F("enableConfigPortal: FALSE, skipping "));
-#endif
-
-        return false; // not connected and not cp
-    }
-
-    // not connected start configportal
-    bool res = startConfigPortal();
-    return res;
 }
 
 bool ThingsCloudWiFiManager::setupHostname(bool restart)
@@ -464,6 +454,8 @@ void ThingsCloudWiFiManager::setupConfigPortal()
 boolean ThingsCloudWiFiManager::startConfigPortal()
 {
     if(tcProvisioningTransportBusy())return false;
+    _maintainWiFi = false;
+    _wifiRetry.reset();
     _begin();
 
 #ifdef WM_DEBUG_LEVEL
@@ -583,6 +575,7 @@ boolean ThingsCloudWiFiManager::startConfigPortal()
  */
 boolean ThingsCloudWiFiManager::process()
 {
+    processSavedWiFi();
 // process mdns, esp32 not required
 #if defined(WM_MDNS) && defined(ESP8266)
     MDNS.update();
@@ -610,7 +603,7 @@ boolean ThingsCloudWiFiManager::process()
         uint8_t state = processConfigPortal();
         return state == WL_CONNECTED;
     }
-    return false;
+    return WiFi.status() == WL_CONNECTED;
 }
 
 // using esp wl_status enums as returns for now, should be fine
@@ -769,13 +762,8 @@ bool ThingsCloudWiFiManager::shutdownConfigPortal()
 #endif
     delay(1000);
     WiFi_Mode(_usermode); // restore users wifi mode, BUG https://github.com/esp8266/Arduino/issues/4372
-    if (WiFi.status() == WL_IDLE_STATUS)
-    {
-        WiFi.reconnect(); // restart wifi since we disconnected it in startconfigportal
-#ifdef WM_DEBUG_LEVEL
-        DEBUG_WM(DEBUG_VERBOSE, F("WiFi Reconnect, was idle"));
-#endif
-    }
+    _wifiRetry.reset();
+    _maintainWiFi = getWiFiIsSaved();
 #ifdef WM_DEBUG_LEVEL
     DEBUG_WM(DEBUG_VERBOSE, F("wifi status:"), getWLStatusString(WiFi.status()));
     DEBUG_WM(DEBUG_VERBOSE, F("wifi mode:"), getModeString(WiFi.getMode()));
@@ -1579,6 +1567,8 @@ bool ThingsCloudWiFiManager::stopConfigPortal()
  */
 bool ThingsCloudWiFiManager::disconnect()
 {
+    _maintainWiFi = false;
+    _wifiRetry.reset();
     if (WiFi.status() != WL_CONNECTED)
     {
 #ifdef WM_DEBUG_LEVEL
@@ -1676,6 +1666,8 @@ bool ThingsCloudWiFiManager::erase(bool opt)
  */
 void ThingsCloudWiFiManager::resetSettings()
 {
+    _maintainWiFi = false;
+    _wifiRetry.reset();
 #ifdef WM_DEBUG_LEVEL
     DEBUG_WM(F("resetSettings"));
 #endif
@@ -1851,7 +1843,10 @@ void ThingsCloudWiFiManager::setBreakAfterConfig(boolean shouldBreak)
 
 void ThingsCloudWiFiManager::linkMQTTClient(ThingsCloudMQTT *client)
 {
+    _wifiMaintenance.reset(); // Invalidate the old client's weak lease.
     _mqttClient = client;
+    if (!client) return;
+    _wifiMaintenance = std::make_shared<std::function<void()>>([this]() { processSavedWiFi(); });
     this->setDeviceKey(_mqttClient->getDeviceKey());
 }
 
@@ -1967,8 +1962,7 @@ void ThingsCloudWiFiManager::setCaptivePortalEnable(boolean enabled)
 /**
  * toggle wifi autoreconnect policy
  * if enabled, then wifi will autoreconnect automatically always
- * On esp8266 we force this on when autoconnect is called, see notes
- * On esp32 this is handled on SYSTEM_EVENT_STA_DISCONNECTED since it does not exist in core yet
+ * Retries are scheduled by process(), on both ESP8266 and ESP32.
  * @since $dev
  * @access public
  * @param boolean enabled [true]
@@ -1976,6 +1970,7 @@ void ThingsCloudWiFiManager::setCaptivePortalEnable(boolean enabled)
 void ThingsCloudWiFiManager::setWiFiAutoReconnect(boolean enabled)
 {
     _wifiAutoReconnect = enabled;
+    if (_legacyCoreReconnect) WiFi.setAutoReconnect(enabled);
 }
 
 /**
@@ -2711,12 +2706,6 @@ void ThingsCloudWiFiManager::WiFiEvent(WiFiEvent_t event, system_event_info_t in
             DEBUG_WM(DEBUG_VERBOSE, F("[EVENT] WIFI_REASON: AUTH FAIL"));
         }
 #endif
-#ifdef esp32autoreconnect
-#ifdef WM_DEBUG_LEVEL
-        DEBUG_WM(DEBUG_VERBOSE, F("[Event] SYSTEM_EVENT_STA_DISCONNECTED, reconnecting"));
-#endif
-        WiFi.reconnect();
-#endif
     }
     else if (event == ARDUINO_EVENT_WIFI_SCAN_DONE)
     {
@@ -2728,15 +2717,15 @@ void ThingsCloudWiFiManager::WiFiEvent(WiFiEvent_t event, system_event_info_t in
 
 void ThingsCloudWiFiManager::WiFi_autoReconnect()
 {
-#ifdef ESP8266
-    WiFi.setAutoReconnect(_wifiAutoReconnect);
-#elif defined(ESP32)
-    // @todo move to seperate method, used for event listener now
-#ifdef WM_DEBUG_LEVEL
-    DEBUG_WM(DEBUG_VERBOSE, F("ESP32 event handler enabled"));
-#endif
-    using namespace std::placeholders;
-    wm_event_id = WiFi.onEvent(std::bind(&ThingsCloudWiFiManager::WiFiEvent, this, _1, _2));
+    // SDK loop owns retries, so core event handlers cannot bypass the backoff.
+    WiFi.setAutoReconnect(false);
+#ifdef ESP32
+    if (!_wifiEventsRegistered)
+    {
+        using namespace std::placeholders;
+        wm_event_id = WiFi.onEvent(std::bind(&ThingsCloudWiFiManager::WiFiEvent, this, _1, _2));
+        _wifiEventsRegistered = true;
+    }
 #endif
 }
 

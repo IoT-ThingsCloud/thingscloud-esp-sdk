@@ -9,6 +9,7 @@
 #include <ArduinoJson.h>
 #include <PubSubClient.h>
 #include <vector>
+#include <memory>
 #include "ThingsCloudCredentials.h"
 
 #ifdef ESP8266
@@ -48,6 +49,11 @@ typedef std::function<void()> DelayedExecutionCallback;
 class ThingsCloudMQTT
 {
 private:
+    friend class ThingsCloudWiFiManager;
+    // A weak lease avoids retaining the manager or calling it after destruction.
+    std::weak_ptr<std::function<void()>> _wifiMaintenance;
+    TCProvResult setWiFiMaintenance(const std::shared_ptr<std::function<void()>>& maintenance);
+
     // Elapsed-time comparisons survive 32-bit millis() wrap; zero is a valid time.
     struct ConnectionRetryTimer
     {

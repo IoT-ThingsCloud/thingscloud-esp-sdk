@@ -259,6 +259,8 @@ void ThingsCloudMQTT::loop()
 {
     if(_credentialsRestorePending)restoreManufacturerCredentials();
     processClaimRegistration();
+    // Drive linked SoftAP recovery for legacy sketches that only call client.loop().
+    if (auto maintenance = _wifiMaintenance.lock()) (*maintenance)();
     // WIFI handling
     bool wifiStateChanged = handleWiFi();
 
@@ -782,6 +784,7 @@ void ThingsCloudMQTT::disconnect()
 
 void ThingsCloudMQTT::setWifiCredentials(const char *wifiSsid, const char *wifiPassword)
 {
+    _wifiMaintenance.reset();
     _wifiSsid = wifiSsid;
     _wifiPassword = wifiPassword;
     _handleWiFi = true;
@@ -1064,8 +1067,18 @@ bool ThingsCloudMQTT::validProvisioningConfiguration() const {
     if(valid&&_projectMQTTEndpoint.length()) {String host;uint16_t port;valid=tcParseEndpoint(_apiOwned,false,_allowPlaintext,host,port);}
     return valid;
 }
+TCProvResult ThingsCloudMQTT::setWiFiMaintenance(const std::shared_ptr<std::function<void()>>& maintenance) {
+    if (_wifiLoopStarted) return {TCProvResultCode::InvalidState};
+    _handleWiFi = false;
+    _connectingToWifi = false;
+    _wifiRetry.cancel();
+    _wifiMaintenance = maintenance;
+    // WiFi ownership does not change legacy MQTT connection/socket timeouts.
+    return {TCProvResultCode::Ok};
+}
 TCProvResult ThingsCloudMQTT::setWiFiManagementMode(TCWiFiManagement mode) {
     if(_wifiLoopStarted&&mode==TCWiFiManagement::External)return {TCProvResultCode::InvalidState};
+    _wifiMaintenance.reset();
     _handleWiFi=mode==TCWiFiManagement::Internal;if(mode==TCWiFiManagement::External)_boundedProvisioningMQTT=true;return {TCProvResultCode::Ok};
 }
 void ThingsCloudMQTT::setCredentialStorage(std::function<bool(String&)> load,std::function<bool(const String&)> save,std::function<bool()> clear) {

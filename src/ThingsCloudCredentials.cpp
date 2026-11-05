@@ -160,6 +160,9 @@ void tcRunCredentialJob(TCCredentialJob* j) {
         secure.setHandshakeTimeout(remaining>=5000?5:(remaining+999)/1000);
 #else
         BearSSL::WiFiClientSecure secure;
+        // Leave room for the application on ESP8266 during provisioning.
+        // ThingsCloud API supports TLS max_fragment_length negotiation.
+        secure.setBufferSizes(1024, 512);
 #endif
         // No CA or certificate verification in this SDK version.
         secure.setInsecure();

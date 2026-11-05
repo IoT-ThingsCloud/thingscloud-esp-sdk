@@ -7,6 +7,7 @@
 #define ThingsCloudWiFiManager_h
 
 #include <ThingsCloudMQTT.h>
+#include "ThingsCloudWiFiRetry.h"
 
 #if defined(ESP8266) || defined(ESP32)
 
@@ -25,8 +26,6 @@
 #define WM_NOCOUNTRY    // esp8266 no country
 #endif
 
-// #define esp32autoreconnect    // implement esp32 autoreconnect event listener kludge, @DEPRECATED
-// autoreconnect is WORKING https://github.com/espressif/arduino-esp32/issues/653#issuecomment-405604766
 
 #ifdef ESP8266
 
@@ -161,16 +160,22 @@ public:
     ~ThingsCloudWiFiManager();
     void WiFiManagerInit();
 
-    // auto connect to saved wifi, or custom, and start config portal on failures
+    // Initialize WiFi maintenance. true means initialized, including offline.
+    // With a non-blocking portal this never waits for a saved network.
+    // Saved networks are retried by process(); only missing credentials open AP.
+    boolean begin();
+
+    // Legacy entry: saved WiFi keeps retrying until connected (unless retries
+    // are explicitly disabled). Linked client.loop() also maintains recovery.
     boolean autoConnect();
 
-    // manually start the config portal, autoconnect does this automatically on connect failure
+    // Manually start provisioning; automatic startup requires missing credentials.
     boolean startConfigPortal(); // auto generates apname
 
     // manually stop the config portal if started manually, stop immediatly if non blocking, flag abort if blocking
     bool stopConfigPortal();
 
-    // Run webserver processing, if setConfigPortalBlocking(false)
+    // Call every loop, online and offline: maintain saved WiFi and process AP.
     boolean process();
 
     // get the AP name of the config portal, so it can be used in the callback
@@ -352,6 +357,15 @@ private:
     IPAddress _sta_static_sn;
     IPAddress _sta_static_dns;
 
+    // MQTT holds only a weak reference; destroying/relinking this manager
+    // automatically invalidates the callback without touching a dead client.
+    std::shared_ptr<std::function<void()>> _wifiMaintenance;
+    bool _legacyCoreReconnect = false;
+    TCWiFiRetry _wifiRetry;
+    bool _maintainWiFi = false;
+    bool _wifiEventsRegistered = false;
+    void processSavedWiFi();
+
     // defaults
     const byte DNS_PORT = 53;
     String _apName = "";
@@ -393,7 +407,7 @@ private:
     bool _allowExit = true;        // allow exit non blocking
 
 #ifdef ESP32
-    wifi_event_id_t wm_event_id;
+    wifi_event_id_t wm_event_id = 0;
     static uint8_t _lastconxresulttmp; // tmp var for esp32 callback
 #endif
 

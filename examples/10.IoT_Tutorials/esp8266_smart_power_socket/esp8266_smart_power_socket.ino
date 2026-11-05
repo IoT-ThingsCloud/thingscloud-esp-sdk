@@ -450,9 +450,8 @@ void setup()
             Serial.println("Soft AP ready: " + manager->getConfigPortalSSID());
             Serial.println("Use ThingsX App WiFi provisioning; short press switches, hold 5s resets WiFi");
         });
-    // SDK restores manufacturer credentials, or opens AP when none are valid.
-    WiFi.setAutoReconnect(true);
-    wm.autoConnect(); // Nonblocking portal; the loop continues metering and checkpointing.
+    // Only missing WiFi opens provisioning; saved networks retry in the background.
+    if (!wm.begin()) Serial.println("WiFi manager initialization failed");
 }
 
 void handleButton()
@@ -515,20 +514,12 @@ void loop()
                       client.isConnected(), synchronized, ESP.getFreeHeap());
     }
     static bool wifiWasUp = false;
-    static uint32_t wifiOfflineAt = 0;
     bool wifiUp = WiFi.status() == WL_CONNECTED;
     if (wifiUp != wifiWasUp)
     {
         wifiWasUp = wifiUp;
-        wifiOfflineAt = millis();
         Serial.printf("WiFi=%s IP=%s RSSI=%d\n", wifiUp ? "UP" : "DOWN", WiFi.localIP().toString().c_str(),
                       WiFi.RSSI());
-    }
-    if (!wifiUp && !wm.getConfigPortalActive() && millis() - wifiOfflineAt >= 60000)
-    {
-        wifiOfflineAt = millis();
-        client.disconnect();
-        wm.startConfigPortal();
     }
     if (client.isConnected() && !synchronized && millis() - lastGet >= GET_RETRY_MS)
         requestSwitch();
